@@ -2,7 +2,7 @@
 #  Initialize                                                    		#
 #-------------------------------------------------------------------------------#
 
-AC_INIT([RNetCDF], 1.6.3-1, [michna@giub.unibe.ch])
+AC_INIT([RNetCDF], 1.7-3)
 
 
 #-------------------------------------------------------------------------------#
@@ -12,58 +12,30 @@ AC_INIT([RNetCDF], 1.6.3-1, [michna@giub.unibe.ch])
 #-- NetCDF include and library path --------------------------------------------#
 AC_ARG_WITH([netcdf-include],
     AC_HELP_STRING([--with-netcdf-include=DIR],
-                   [location of netcdf header files]),
-    [netcdf_include_path=$withval])
-if test [ -n "$netcdf_include_path" ] ; then
-   AC_SUBST([CPPFLAGS],["-I${netcdf_include_path} ${CPPFLAGS}"])
-fi
+                   [directory with netcdf header files]),
+    [CPPFLAGS="-I${withval} ${CPPFLAGS}"])
 
 AC_ARG_WITH([netcdf-lib],
     AC_HELP_STRING([--with-netcdf-lib=DIR],
-                   [location of netcdf libraries]),
-    [netcdf_lib_path=$withval])
-if test [ -n "$netcdf_lib_path" ] ; then
-   AC_SUBST([LIBS],["-L${netcdf_lib_path} ${LIBS}"])
-fi
-
-#-- UDUNITS include and library path -------------------------------------------#
-AC_ARG_WITH([udunits-include],
-    AC_HELP_STRING([--with-udunits-include=DIR],
-                   [location of udunits header files]),
-    [udunits_include_path=$withval])
-if test [ -n "$udunits_include_path" ] ; then
-   AC_SUBST([CPPFLAGS],["-I${udunits_include_path} ${CPPFLAGS}"])
-fi
-
-AC_ARG_WITH([udunits-lib],
-    AC_HELP_STRING([--with-udunits-lib=DIR],
-                   [location of udunits libraries]),
-    [udunits_lib_path=$withval])
-if test [ -n "$udunits_lib_path" ] ; then
-   AC_SUBST([LIBS],["-L${udunits_lib_path} ${LIBS}"])
-fi
-
-#-- Optional include path for udunits.dat (UDUNITS 1) --------------------------#
-AC_ARG_WITH([udunits-dat],
-    AC_HELP_STRING([--with-udunits-dat=FILE],
-                   [location of udunits.dat file]),
-    [udunits_dat_file=$withval])
+                   [directory with netcdf libraries]),
+    [LDFLAGS="-L${withval} ${LDFLAGS}"])
 
 #-- Optional include path for HDF5 ---------------------------------------------#
 AC_ARG_WITH([hdf5-lib],
     AC_HELP_STRING([--with-hdf5-lib=DIR],
-                   [location of hdf5 libraries]),
-    [hdf5_lib_path=$withval])
-if test [ -n "$hdf5_lib_path" ] ; then
-   AC_SUBST([LIBS],["-L${hdf5_lib_path} ${LIBS}"])
-fi
+                   [directory with hdf5 libraries]),
+    [LDFLAGS="-L${withval} ${LDFLAGS}"])
 
-#-- Optional local copy of units file(s) (UDUNITS 1 and 2) ---------------------#
-AC_ARG_ENABLE([units-copy],
-    AC_HELP_STRING([--enable-units-copy@<:@=PATH@:>@],
-                   [place a local copy of units data file(s) in the package @<:@no@:>@]),
-    [do_units_copy="${enableval}"], [do_units_copy=no])
+#-- UDUNITS include and library path -------------------------------------------#
+AC_ARG_WITH([udunits-include],
+    AC_HELP_STRING([--with-udunits-include=DIR],
+                   [directory with udunits header files]),
+    [CPPFLAGS="-I${withval} ${CPPFLAGS}"])
 
+AC_ARG_WITH([udunits-lib],
+    AC_HELP_STRING([--with-udunits-lib=DIR],
+                   [directory with udunits libraries]),
+    [LDFLAGS="-L${withval} ${LDFLAGS}"])
 
 #-------------------------------------------------------------------------------#
 #  Find the compiler and compiler options to use   	                 	#
@@ -78,67 +50,58 @@ CC=`${R_HOME}/bin/R CMD config CC`
 CFLAGS=`${R_HOME}/bin/R CMD config CFLAGS`
 
 #-- Check for NetCDF and UDUNITS library ---------------------------------------#
-AC_CHECK_LIB(netcdf, nc_open, [],
-[
-    AC_CHECK_LIB(netcdf, nc_create, [have_netcdf_hdf5=TRUE],
-                 AC_MSG_ERROR(netcdf library not found),
-                 [-lhdf5 -lhdf5_hl -lcurl -lz])
-    if test "${have_netcdf_hdf5}" = TRUE; then
-        LIBS="${LIBS} -lnetcdf -lhdf5 -lhdf5_hl -lcurl -lz"
-    fi
-])
 
-AC_CHECK_LIB(udunits2, utInit, [], [have_udunits=FALSE])
-if test "${have_udunits}" = FALSE; then
-    AC_CHECK_LIB(udunits2, utScan, [], [have_udunits_expat=FALSE], [-lexpat])
-    if test "${have_udunits_expat}" = FALSE; then
-        AC_CHECK_LIB(udunits, main, [], AC_MSG_ERROR(udunits library not found))
+# Test for libraries that may be needed for linking.
+AC_CHECK_LIB(m,cos)
+AC_CHECK_LIB(dl,dlopen)
+AC_CHECK_LIB(z,deflate)
+AC_CHECK_LIB(curl,curl_easy_init)
+AC_CHECK_LIB(expat,XML_Parse)
+AC_CHECK_LIB(hdf5,H5open)
+AC_CHECK_LIB(hdf5_hl,H5DSset_scale)
+
+# Test udunits2 then udunits library:
+have_udunits2="yes"
+AC_CHECK_LIB(udunits2, utScan, [], [have_udunits2=no])
+if test "$have_udunits2" == yes; then
+    UDUNITS_LIB=udunits2
+    UDUNITS_DBFILE=udunits2.xml
+    UDUNITS_DBVAR="UDUNITS2_XML_PATH"
+else
+    have_udunits1="yes"
+    AC_CHECK_LIB(udunits, utScan, [], [have_udunits1=no])
+    if test "$have_udunits1" == yes ; then
+        UDUNITS_LIB=udunits
+        UDUNITS_DBFILE=udunits.dat
+        UDUNITS_DBVAR="UDUNITS_PATH"
     else
-        LIBS="${LIBS} -lexpat"
+        AC_MSG_ERROR("neither udunits2 nor udunits library was found")
     fi
 fi
+
+# Test netcdf library:
+AC_CHECK_LIB(netcdf, nc_open, [],
+    AC_MSG_ERROR("netcdf library not found"))
 
 #-- Check for netcdf.h and udunits.h -------------------------------------------#
-AC_CHECK_HEADERS(netcdf.h, [], AC_MSG_ERROR(netcdf header netcdf.h not found))
 
-AC_CHECK_HEADERS(udunits.h, [], AC_MSG_ERROR(udunits header udunits.h not found))
+AC_CHECK_HEADERS(netcdf.h, [], AC_MSG_ERROR("netcdf header netcdf.h not found"))
 
-#-- Make local copy of units file(s) (UDUNITS 1 and 2) if requested ------------#
-if test "${do_units_copy}" != no ; then
-    if test "${do_units_copy}" = yes ; then 
-        do_units_copy="${udunits_dat_file}"
-    fi
-     
-    if test -z "${do_units_copy}" ; then
-        for dir in /usr/share/udunits /usr/local/share/udunits \
-             /usr/etc/udunits.dat /usr/local/etc/udunits.dat ; do
-            if test -e "${dir}" ; then
-	        do_units_copy="${dir}"
-	        break
-	    fi
-        done
-        if test -z "${do_units_copy}" ; then
-	    AC_MSG_ERROR([cannot find units file(s) to copy - use --enable-units-copy=PATH])
-        fi
-    fi
-
-    if test -d "${do_units_copy}" ; then
-        mkdir -p inst/udunits 2>/dev/null
-        cp -p "${do_units_copy}"/udunits*.xml inst/udunits/
-    else
-        mkdir inst 2>/dev/null
-        cp -p "${do_units_copy}" inst/udunits.dat
-    fi
+if test "$have_udunits2" == yes; then
+  AC_CHECK_HEADERS(udunits2/udunits.h, [],
+    AC_CHECK_HEADERS(udunits.h, [],
+      AC_MSG_ERROR("udunits2 headers not found")))
+else
+  AC_CHECK_HEADERS(udunits.h, [], AC_MSG_ERROR("udunits headers not found"))
 fi
-
 
 #-------------------------------------------------------------------------------#
 #  Do substitution                               	                 	#
 #-------------------------------------------------------------------------------#
 
-AC_SUBST(CPPFLAGS)
-AC_SUBST(LIBS)
-AC_SUBST(udunits_dat_file)
+AC_SUBST(UDUNITS_LIB)
+AC_SUBST(UDUNITS_DBFILE)
+AC_SUBST(UDUNITS_DBVAR)
 AC_OUTPUT(R/load.R
           src/Makevars)
 

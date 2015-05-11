@@ -1,22 +1,27 @@
 Package: RNetCDF
-Version: 1.6.3-1
-Date: 2014-05-26
-Title: R Interface to NetCDF Datasets
-Author: Pavel Michna
-Maintainer: Pavel Michna <michna@giub.unibe.ch>
-Depends: R (>= 2.4.0)
+Version: 1.7-3
+Date: 2015-05-09
+Title: Interface to NetCDF Datasets
+Author: Pavel Michna, with contributions from Milton Woods
+Maintainer: Milton Woods <mwoods@users.r-forge.r-project.org>
+Depends: R (>= 2.5.0)
 SystemRequirements: netcdf (>= 3.6.0), udunits (>= 1.11.7) or udunits2
         (>= 2.1.22)
-Description: This package provides an interface to Unidata's NetCDF
-        library functions (version 3) and furthermore access to
-        Unidata's UDUNITS calendar conversions. The routines and the
-        documentation follow the NetCDF and UDUNITS C interface, so the
-        corresponding manuals can be consulted for more detailed
-        information.
-License: GPL (>= 2)
-URL: http://www.unidata.ucar.edu/packages/netcdf/
-        http://www.unidata.ucar.edu/packages/udunits/
+Description: An interface to the NetCDF file format designed by Unidata
+  for efficient storage of array-oriented scientific data and descriptions.
+  The R interface is closely based on the C API of the NetCDF library,
+  and it includes calendar conversions from the Unidata UDUNITS library.
+  The current implementation supports all operations on NetCDF datasets
+  in classic and 64-bit offset file formats, and NetCDF4-classic format
+  is supported for reading and modification of existing files.
+License: GPL (>= 2) | file LICENSE
+URL: http://rnetcdf.r-forge.r-project.org
+        http://www.unidata.ucar.edu/software/netcdf/
+        http://www.unidata.ucar.edu/software/udunits/
 NeedsCompilation: yes
 Repository: CRAN
-Date/Publication: 2014-08-31 19:42:13
-Packaged: 2014-08-31 17:41:33 UTC; ripley
+Repository/R-Forge/Project: rnetcdf
+Repository/R-Forge/Revision: 63
+Repository/R-Forge/DateTimeStamp: 2015-05-09 09:41:28
+Date/Publication: 2015-05-11 08:48:00
+Packaged: 2015-05-09 09:45:50 UTC; rforge

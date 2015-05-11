@@ -1,10 +1,20 @@
 ".onLoad" <- function(lib, pkg) {
-    datfile <- system.file("udunits.dat", package=pkg)
-    if(nzchar(datfile))
-        Sys.setenv("UDUNITS_PATH"=datfile)
-    xmlfile <- system.file("udunits", "udunits2.xml", package=pkg)
-    if(nzchar(xmlfile))
-        Sys.setenv("UDUNITS2_XML_PATH"=xmlfile)
 
-    utinit.nc("@udunits_dat_file@")
+    # Check environment for name of @UDUNITS_LIB@ database requested by user:
+    envdb <- Sys.getenv("@UDUNITS_DBVAR@", unset=NA)
+
+    if (is.na(envdb)) {
+        # Initialise @UDUNITS_LIB@ library with database packaged in RNetCDF:
+        datafile <- system.file("udunits", "@UDUNITS_DBFILE@", package=pkg, lib.loc=lib)
+        if ("@UDUNITS_LIB@" == "udunits2") {
+            # udunits2 ignores argument passed to utInit C function
+            Sys.setenv(@UDUNITS_DBVAR@=datafile)
+        }
+        utinit.nc(datafile)
+    } else {
+        # Initialise @UDUNITS_LIB@ library with user-specified database:
+        utinit.nc("")
+    }
+
 }
+
