@@ -2,7 +2,7 @@
  *									       *
  *  Name:       RNetCDF.c						       *
  *									       *
- *  Version:    1.7-3							       *
+ *  Version:    1.8-1							       *
  *									       *
  *  Purpose:    NetCDF interface for R.					       *
  *									       *
@@ -57,6 +57,7 @@
  *  mw       24/04/15   Initialise and free utunit when using udunits2,        *
  *                      to fix memory errors reported by valgrind.             *
  *                      Allow udunits2 headers to be in udunits2 directory.    *
+ *  mw       26/01/16   Fix memory leak from abnormal exit of calendar funcs.  *
  *									       *
 \*=============================================================================*/
 
@@ -1752,30 +1753,18 @@ SEXP R_ut_calendar (SEXP unitstring, SEXP unitcount, SEXP values)
 
     status = utScan(CHAR(STRING_ELT(unitstring, 0)), &utunit);
     if(status != 0) {
-        R_ut_strerror(status, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-        REAL(VECTOR_ELT(retlist, 0))[0] = status;
-	UNPROTECT(2);
-	return(retlist);        
+        goto cleanup;
     }
   
     /*-- Check if unit is time and has origin ---------------------------------*/
-    status = utIsTime(&utunit);    
-    if(status == 0) {
-        R_ut_strerror(UT_ENOTTIME, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-	REAL(VECTOR_ELT(retlist, 0))[0] = UT_ENOTTIME;
-	UNPROTECT(2);
-	return(retlist);        
+    if ( !utIsTime(&utunit) ) {
+        status = UT_ENOTTIME;
+        goto cleanup;
     }
 
-    status = utHasOrigin(&utunit);    
-    if(status == 0) {
-        R_ut_strerror(UT_EINVALID, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-        REAL(VECTOR_ELT(retlist, 0))[0] = UT_EINVALID;
-	UNPROTECT(2);
-	return(retlist);        
+    if ( !utHasOrigin(&utunit) ) {
+        status = UT_EINVALID;
+        goto cleanup;
     }
 
     /*-- Convert values -------------------------------------------------------*/
@@ -1793,17 +1782,16 @@ SEXP R_ut_calendar (SEXP unitstring, SEXP unitcount, SEXP values)
 	REAL(VECTOR_ELT(retlist, 2))[i+5*count] = (double)second;
     }
 
+    /*-- Returning the list ---------------------------------------------------*/
+cleanup:
 #ifdef HAVE_LIBUDUNITS2
     utFree(&utunit);
 #endif
-
-    /*-- Returning the list ---------------------------------------------------*/
+    REAL(VECTOR_ELT(retlist, 0))[0] = (double)status;	     
     if(status != 0) {
         R_ut_strerror(status, strerror);
-        SET_VECTOR_ELT(retlist, 1, mkString(strerror));
+        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
     }
-    
-    REAL(VECTOR_ELT(retlist, 0))[0] = (double)status;	     
     UNPROTECT(2);
     return(retlist);
 }
@@ -1896,30 +1884,18 @@ SEXP R_ut_inv_calendar (SEXP unitstring, SEXP unitcount, SEXP values)
 
     status = utScan(CHAR(STRING_ELT(unitstring, 0)), &utunit);
     if(status != 0) {
-        R_ut_strerror(status, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-        REAL(VECTOR_ELT(retlist, 0))[0] = status;
-	UNPROTECT(2);
-	return(retlist);        
+        goto cleanup;
     }
 
     /*-- Check if unit is time and has origin ---------------------------------*/
-    status = utIsTime(&utunit);    
-    if(status == 0) {
-        R_ut_strerror(UT_ENOTTIME, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-        REAL(VECTOR_ELT(retlist, 0))[0] = UT_ENOTTIME;
-	UNPROTECT(2);
-	return(retlist);        
+    if ( !utIsTime(&utunit) ) {
+        status = UT_ENOTTIME;
+        goto cleanup;
     }
 
-    status = utHasOrigin(&utunit);    
-    if(status == 0) {
-        R_ut_strerror(UT_EINVALID, strerror);
-        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
-        REAL(VECTOR_ELT(retlist, 0))[0] = UT_EINVALID;
-	UNPROTECT(2);
-	return(retlist);        
+    if ( !utHasOrigin(&utunit) ) {
+        status = UT_EINVALID;
+        goto cleanup;
     }
   
     /*-- Convert values -------------------------------------------------------*/
@@ -1937,21 +1913,19 @@ SEXP R_ut_inv_calendar (SEXP unitstring, SEXP unitcount, SEXP values)
         REAL(VECTOR_ELT(retlist, 2))[i] = (double)utvalue;
     }
 
+    /*-- Returning the list ---------------------------------------------------*/
+cleanup:
 #ifdef HAVE_LIBUDUNITS2
     utFree(&utunit);
 #endif
-
-    /*-- Returning the list ---------------------------------------------------*/
+    REAL(VECTOR_ELT(retlist, 0))[0] = (double)status;	     
     if(status != 0) {
         R_ut_strerror(status, strerror);
-        SET_VECTOR_ELT(retlist, 1, mkString(strerror));
+        SET_VECTOR_ELT (retlist, 1, mkString(strerror));
     }
-    
-    REAL(VECTOR_ELT(retlist, 0))[0] = (double)status;	     
     UNPROTECT(2);
     return(retlist);
 }
-
 
 /*=============================================================================*/
  
