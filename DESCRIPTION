@@ -1,12 +1,11 @@
 Package: RNetCDF
-Version: 1.8-2
-Date: 2016-02-21
+Version: 1.9-1
+Date: 2017-10-04
 Title: Interface to NetCDF Datasets
 Author: Pavel Michna, with contributions from Milton Woods
 Maintainer: Milton Woods <mwoods@users.r-forge.r-project.org>
 Depends: R (>= 2.5.0)
-SystemRequirements: netcdf (>= 3.6.0), udunits (>= 1.11.7) or udunits2
-        (>= 2.1.22)
+SystemRequirements: netcdf udunits-2
 Description: An interface to the NetCDF file format designed by Unidata
   for efficient storage of array-oriented scientific data and descriptions.
   The R interface is closely based on the C API of the NetCDF library,
@@ -21,7 +20,7 @@ URL: http://rnetcdf.r-forge.r-project.org
 NeedsCompilation: yes
 Repository: CRAN
 Repository/R-Forge/Project: rnetcdf
-Repository/R-Forge/Revision: 76
-Repository/R-Forge/DateTimeStamp: 2016-02-21 00:07:03
-Date/Publication: 2016-02-21 09:02:40
-Packaged: 2016-02-21 00:25:14 UTC; rforge
+Repository/R-Forge/Revision: 234
+Repository/R-Forge/DateTimeStamp: 2017-10-06 22:45:42
+Date/Publication: 2017-10-08 22:16:10 UTC
+Packaged: 2017-10-06 23:05:26 UTC; rforge

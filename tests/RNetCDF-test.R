@@ -2,14 +2,14 @@
 #                                                                               #
 #  Name:       RNetCDF-test.R                                                   #
 #                                                                               #
-#  Version:    1.8-2                                                          #
+#  Version:    1.9-1                                                            #
 #                                                                               #
 #  Purpose:    Test functions to the NetCDF interface for R.                    #
 #                                                                               #
-#  Author:     Pavel Michna (michna@giub.unibe.ch)                              #
-#              Milton Woods (m.woods@bom.gov.au)                                #
+#  Author:     Pavel Michna (michna@users.r-forge.r-project.org)                #
+#              Milton Woods (mwoods@users.r-forge.r-project.org)                #
 #                                                                               #
-#  Copyright:  (C) 2010-2014 Pavel Michna                                       #
+#  Copyright:  (C) 2010-2017 Pavel Michna                                       #
 #                                                                               #
 #===============================================================================#
 #                                                                               #
@@ -113,10 +113,10 @@ myint0        <- 12345
 mychar0       <- "?"
 
 ##  Put the data
-var.put.nc(nc, "time", mytime, 1, length(mytime))
-var.put.nc(nc, "temperature", mytemperature, c(1,1), c(nstation,ntime))
+var.put.nc(nc, "time", mytime)
+var.put.nc(nc, "temperature", mytemperature, c(NA,1), c(NA,ntime))
 var.put.nc(nc, "packvar", mypackvar, pack=TRUE)
-var.put.nc(nc, "name", myname, c(1,1), c(nstring,nstation))
+var.put.nc(nc, "name", myname, c(1,1), c(nstring,NA))
 var.put.nc(nc, "qcflag", charToRaw(myqcflag))
 var.put.nc(nc, "int0", myint0)
 var.put.nc(nc, "char0", mychar0)
