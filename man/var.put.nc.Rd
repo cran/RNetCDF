@@ -6,7 +6,8 @@
 
 \description{Write the contents of a NetCDF variable.}
 
-\usage{var.put.nc(ncfile, variable, data, start=NA, count=NA, na.mode=0, pack=FALSE)}
+\usage{var.put.nc(ncfile, variable, data, start=NA, count=NA, na.mode=4, pack=FALSE,
+  cache_bytes=NA, cache_slots=NA, cache_preemption=NA)}
 
 \arguments{
   \item{ncfile}{Object of class "\code{NetCDF}" which points to the NetCDF dataset (as returned from \code{\link[RNetCDF]{open.nc}}).}
@@ -14,15 +15,25 @@
   \item{data}{An R vector or array of data to be written to the NetCDF variable. Values are taken from \code{data} in the order of R vector elements, so that leftmost indices vary fastest over an array.}
   \item{start}{A vector of indices specifying the element where writing starts along each dimension of \code{variable}. Indices are numbered from 1 onwards, and the order of dimensions is shown by \code{\link[RNetCDF]{print.nc}} (array elements are stored sequentially with leftmost indices varying fastest). By default (\code{start=NA}), all dimensions of \code{variable} are written from the first element onwards. Otherwise, \code{start} must be a vector whose length is not less than the number of dimensions in \code{variable} (excess elements are ignored). Any \code{NA} values in vector \code{start} are set to 1.}
   \item{count}{A vector of integers specifying the number of values to write along each dimension of \code{variable}. The order of dimensions is the same as for \code{start}. By default (\code{count=NA}), \code{count} is set to \code{dim(data)} for an array or \code{length(data)} for a vector. Otherwise, \code{count} must be a vector whose length is not less than the number of dimensions in \code{variable} (excess elements are ignored). Any \code{NA} value in vector \code{count} indicates that the corresponding dimension should be written from the \code{start} index to the end of the dimension. Note that an unlimited dimension initially has zero length, and the dimension is extended by setting the corresponding element of \code{count} greater than the current length.}
-  \item{na.mode}{Set the mode for handling missing values (\code{NA}) in numeric variables: 0=accept \code{_FillValue} or \code{missing_value} attribute, 1=accept only \code{_FillValue} attribute, 2=accept only \code{missing_value} attribute.}
+  \item{na.mode}{Set the mode for handling missing values (\code{NA}) in numeric variables: 0=accept \code{_FillValue}, then \code{missing_value} attribute; 1=accept only \code{_FillValue} attribute; 2=accept only \code{missing_value} attribute; 3=no missing value conversion; 4=valid range from valid_min and valid_max or valid_range, fill value from _FillValue, with defaults for each type except \code{NC_BYTE} and \code{NC_UBYTE} (see \url{http://www.unidata.ucar.edu/software/netcdf/docs/attribute_conventions.html}).}
   \item{pack}{Variables are packed if \code{pack=TRUE} and the attributes \code{add_offset} and \code{scale_factor} are defined. Default is \code{FALSE}.}
+
+The arguments below apply only to datasets in "netcdf4" format. Reading and writing of variables involves a "chunk cache", and default cache settings are defined by the NetCDF library. Performance may be improved in some applications by adjusting the cache settings through the following options:
+
+  \item{cache_bytes}{Size of chunk cache in bytes. Value of \code{NA} (default) implies no change.}
+  \item{cache_slots}{Number of slots in chunk cache. Value of \code{NA} (default) implies no change.}
+  \item{cache_preemption}{Value between 0 and 1 (inclusive) that biases the cache scheme towards eviction of chunks that have been fully read. Value of \code{NA} (default) implies no change.}
 }
 
-\details{This function writes values to a NetCDF variable. Type conversion is performed by the NetCDF library, so that numeric values in R are automatically converted to the correct type of NetCDF variable.
+\details{This function writes values to a NetCDF variable. Data values in R are automatically converted to the correct type of NetCDF variable.
 
-However, text represented by R types \code{raw} and \code{character} can only be written to NetCDF type \code{NC_CHAR}. The dimensions of R \code{raw} variables map directly to NetCDF dimensions, but \code{character} variables have an implied dimension corresponding to the string length. This implied dimension must be defined explicitly as the fastest-varying dimension of the \code{NC_CHAR} variable, and it must be included as the first element of arguments \code{start} and \code{count} taken by this function.
+Text represented by R type \code{character} can be written to NetCDF types \code{NC_CHAR} and \code{NC_STRING}, and R type \code{raw} can be written to NetCDF type \code{NC_CHAR}. When writing to \code{NC_CHAR} variables, \code{character} variables have an implied dimension corresponding to the string length. This implied dimension must be defined explicitly as the fastest-varying dimension of the \code{NC_CHAR} variable, and it must be included as the first element of arguments \code{start} and \code{count} taken by this function.
 
-Values of \code{NA} are supported in numeric variables if the variable's missing value attribute (as defined in \code{na.mode}) is set. They are converted to the corresponding value before writing to disk. If \code{na.mode=0} and both attributes are defined, the value of \code{_FillValue} is used.
+Due to the lack of native support for 64-bit integers in R, NetCDF types \code{NC_INT64} and \code{NC_UINT64} require special attention. This function accepts the usual R \code{integer} (signed 32-bit) and \code{numeric} (double precision) types, but to represent integers larger than about 53-bits without truncation, \\code{\link[bit64:bit64-package]{integer64}} vectors are also supported.
+
+NetCDF numeric variables cannot portably represent \code{NA} values from R. NetCDF does allow attributes to be defined for variables, and several conventions exist for attributes that define missing values and valid ranges. The convention in use can be specified by argument \code{na.mode}. Values of \code{NA} in argument \code{data} are converted to a missing or fill value before writing to the NetCDF variable. Unusual cases can be handled directly in user code by setting \code{na.mode=3}.
+
+Variables of user-defined types are supported, subject to conditions on the corresponding data structures in R. "compound" arrays must be stored in R as lists, with items named for the compound fields; items of base NetCDF data types are stored as R arrays, with leading dimensions from the field dimensions (if any) and trailing dimensions from the NetCDF variable. "enum" arrays are stored in R as factor arrays. "opaque" arrays are stored in R as raw (byte) arrays, with a leading dimension for bytes of the opaque type and trailing dimensions from the NetCDF variable. "vlen" arrays are stored in R as a list with dimensions of the NetCDF variable; items in the list may have different lengths; base NetCDF data types are stored as R vectors.
 
 To reduce the storage space required by a NetCDF file, numeric variables can be "packed" into types of lower precision. The packing operation involves subtraction of attribute \code{add_offset} before division by attribute \code{scale_factor}. This packing operation is performed automatically for variables defined with the two attributes \code{add_offset} and \code{scale_factor} if argument \code{pack} is set to \code{TRUE}. If \code{pack} is \code{FALSE}, \code{data} values are assumed to be packed correctly and are written to the variable without alteration.
 
@@ -38,7 +49,8 @@ Awkwardness arises mainly from one thing: NetCDF data are written with the last 
 
 \examples{
 ##  Create a new NetCDF dataset and define two dimensions
-nc <- create.nc("var.put.nc")
+file1 <- tempfile("var.put_", fileext=".nc")
+nc <- create.nc(file1)
 
 dim.def.nc(nc, "station", 5)
 dim.def.nc(nc, "time", unlim=TRUE)
@@ -49,8 +61,8 @@ var.def.nc(nc, "time", "NC_INT", "time")
 var.def.nc(nc, "temperature", "NC_DOUBLE", c(0,1))
 var.def.nc(nc, "name", "NC_CHAR", c("max_string_length", "station"))
 
-##  Put some missing_value attribute for temperature
-att.put.nc(nc, "temperature", "missing_value", "NC_DOUBLE", -99999.9)
+##  Put some _FillValue attribute for temperature
+att.put.nc(nc, "temperature", "_FillValue", "NC_DOUBLE", -99999.9)
 
 ##  Define variable values
 mytime        <- c(1:2)
@@ -71,6 +83,7 @@ var.put.nc(nc, "temperature", mytemperature)
 var.put.nc(nc, "name", myname)
 
 close.nc(nc)
+unlink(file1)
 }
 
 \keyword{file}

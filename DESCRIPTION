@@ -1,26 +1,27 @@
 Package: RNetCDF
-Version: 1.9-1
-Date: 2017-10-04
+Version: 2.0-3
+Date: 2019-10-05
 Title: Interface to NetCDF Datasets
-Author: Pavel Michna, with contributions from Milton Woods
-Maintainer: Milton Woods <mwoods@users.r-forge.r-project.org>
-Depends: R (>= 2.5.0)
+Authors@R: c(person("Pavel", "Michna", role = "aut",
+                    email = "rnetcdf-devel@bluewin.ch"),
+             person("Milton", "Woods", role = c("aut", "cre"),
+                    email = "miltonjwoods@gmail.com"))
+Depends: R (>= 3.0.0)
 SystemRequirements: netcdf udunits-2
+Suggests: bit64
 Description: An interface to the NetCDF file format designed by Unidata
   for efficient storage of array-oriented scientific data and descriptions.
-  The R interface is closely based on the C API of the NetCDF library,
-  and it includes calendar conversions from the Unidata UDUNITS library.
-  The current implementation supports all operations on NetCDF datasets
-  in classic and 64-bit offset file formats, and NetCDF4-classic format
-  is supported for reading and modification of existing files.
+  This R interface is closely based on the C API of the NetCDF4 library,
+  and it includes calendar conversions from the Unidata UDUNITS2 library.
 License: GPL (>= 2) | file LICENSE
-URL: http://rnetcdf.r-forge.r-project.org
+URL: https://github.com/mjwoods/RNetCDF
         http://www.unidata.ucar.edu/software/netcdf/
         http://www.unidata.ucar.edu/software/udunits/
+BugReports: https://github.com/mjwoods/RNetCDF/issues
 NeedsCompilation: yes
+Packaged: 2019-10-05 22:44:39 UTC; mwoods
+Author: Pavel Michna [aut],
+  Milton Woods [aut, cre]
+Maintainer: Milton Woods <miltonjwoods@gmail.com>
 Repository: CRAN
-Repository/R-Forge/Project: rnetcdf
-Repository/R-Forge/Revision: 234
-Repository/R-Forge/DateTimeStamp: 2017-10-06 22:45:42
-Date/Publication: 2017-10-08 22:16:10 UTC
-Packaged: 2017-10-06 23:05:26 UTC; rforge
+Date/Publication: 2019-10-08 07:10:02 UTC

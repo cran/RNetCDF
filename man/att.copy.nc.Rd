@@ -20,12 +20,14 @@
 
 \references{\url{http://www.unidata.ucar.edu/software/netcdf/}}
 
-\author{Pavel Michna}
+\author{Pavel Michna, Milton Woods}
 
 \examples{
 ##  Create two new NetCDF datasets and define two dimensions
-nc.1 <- create.nc("att.copy1.nc")
-nc.2 <- create.nc("att.copy2.nc")
+file1 <- tempfile("att.copy_", fileext=".nc")
+file2 <- tempfile("att.copy_", fileext=".nc")
+nc.1 <- create.nc(file1)
+nc.2 <- create.nc(file2)
 
 dim.def.nc(nc.1, "station", 5)
 dim.def.nc(nc.1, "time", unlim=TRUE)
@@ -41,7 +43,7 @@ var.def.nc(nc.2, "time", "NC_INT", "time")
 var.def.nc(nc.2, "temperature", "NC_DOUBLE", c(0,1))
 
 ##  Put some attributes to the first dataset
-att.put.nc(nc.1, "temperature", "missing_value", "NC_DOUBLE", -99999.9)
+att.put.nc(nc.1, "temperature", "_FillValue", "NC_DOUBLE", -99999.9)
 att.put.nc(nc.1, "NC_GLOBAL", "title", "NC_CHAR", "Data from Foo")
 
 ##  Copy the attributes to the second dataset
@@ -50,6 +52,8 @@ att.copy.nc(nc.1, "NC_GLOBAL", "title", nc.2, "NC_GLOBAL")
 
 close.nc(nc.1)
 close.nc(nc.2)
+unlink(file1)
+unlink(file2)
 }
 
 \keyword{file}

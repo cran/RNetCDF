@@ -19,11 +19,12 @@
 
 \references{\url{http://www.unidata.ucar.edu/software/netcdf/}}
 
-\author{Pavel Michna}
+\author{Pavel Michna, Milton Woods}
 
 \examples{
 ##  Create a new NetCDF dataset and define two dimensions
-nc <- create.nc("att.rename.nc")
+file1 <- tempfile("att.rename_", fileext=".nc")
+nc <- create.nc(file1)
 
 dim.def.nc(nc, "station", 5)
 dim.def.nc(nc, "time", unlim=TRUE)
@@ -33,14 +34,15 @@ var.def.nc(nc, "time", "NC_INT", "time")
 var.def.nc(nc, "temperature", "NC_DOUBLE", c(0,1))
 
 ##  Put some attributes
-att.put.nc(nc, "temperature", "missing_value", "NC_DOUBLE", -99999.9)
+att.put.nc(nc, "temperature", "_FillValue", "NC_DOUBLE", -99999.9)
 att.put.nc(nc, "NC_GLOBAL", "title", "NC_CHAR", "Data from Foo")
 
 ##  Rename these attributes
-att.rename.nc(nc, "temperature", "missing_value", "my_missing_value")
+att.rename.nc(nc, "temperature", "_FillValue", "my__FillValue")
 att.rename.nc(nc, "NC_GLOBAL", "title", "my_title")
 
 close.nc(nc)
+unlink(file1)
 }
 
 \keyword{file}

@@ -2,10 +2,10 @@
 #  Initialize                                                    		#
 #-------------------------------------------------------------------------------#
 
-AC_INIT([RNetCDF], [1.9-1])
+AC_INIT([RNetCDF], [2.0-3])
 
 #-------------------------------------------------------------------------------#
-#  Find the compiler and compiler options to use   	                 	#
+#  Find the compiler and compiler options to use for tests                   	#
 #-------------------------------------------------------------------------------#
 
 : ${R_HOME=`R RHOME`}
@@ -15,6 +15,8 @@ if test -z "${R_HOME}"; then
 fi
 CC=`"${R_HOME}/bin/R" CMD config CC`
 CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
+
+# Prepend user-specified CPPFLAGS to those from R:
 R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
 CPPFLAGS="$CPPFLAGS $R_CPPFLAGS"
 
@@ -34,81 +36,48 @@ AS_IF([test "x$with_nc_config" != xno],
 
 AS_IF([test "x$have_nc_config" == xyes],
   [
-    # Find libraries and cflags used to build netcdf:
+    # Prepend linker flags to LDFLAGS:
     AC_MSG_CHECKING(netcdf linker flags)
     NETCDF_LIBS=`nc-config --libs`
     AC_MSG_RESULT($NETCDF_LIBS)
     LDFLAGS="$NETCDF_LIBS $LDFLAGS"
-    AC_MSG_CHECKING(netcdf pre-processor and compiler flags)
+    # Prepend preprocessor and compiler flags to CPPFLAGS:
+    AC_MSG_CHECKING(netcdf preprocessor and compiler flags)
     NETCDF_CFLAGS=`nc-config --cflags`
     AC_MSG_RESULT($NETCDF_CFLAGS)
     CPPFLAGS="$NETCDF_CFLAGS $CPPFLAGS"
-  ], [
-    # Check that netcdf header files can be compiled:
-    AC_CHECK_HEADERS(netcdf.h, [],
-       AC_MSG_ERROR("netcdf.h was not compiled - defining CPPFLAGS may help"))
-    # Add netcdf library to LIBS if it can be linked (and is not already being linked):
-    AC_SEARCH_LIBS(nc_open, netcdf, [],
-        AC_MSG_ERROR("netcdf library was not linked - defining LDFLAGS may help"))
   ]
 )
 
+# Check that netcdf header files can be compiled:
+AC_CHECK_HEADERS(netcdf.h, [],
+    AC_MSG_ERROR("netcdf.h was not compiled - defining CPPFLAGS may help"))
+
+# Check that netcdf library can be found.
+# Linker flags are prepended to LIBS if needed.
+AC_SEARCH_LIBS(nc_open, netcdf, [],
+    AC_MSG_ERROR("netcdf library was not linked - defining LDFLAGS may help"))
+
+# Check for the existence of optional netcdf routines.
+# C preprocessor macros HAVE_routine are defined for existing routines.
+AC_CHECK_FUNCS([nc_rename_grp nc_get_var_chunk_cache nc_inq_var_szip nc_inq_var_endian nc_inq_var_filter])
+
 #-------------------------------------------------------------------------------#
-#  Find UDUNITS library and header files                                        #
+#  Find UDUNITS2 library and header files                                       #
 #-------------------------------------------------------------------------------#
 
-# If the expat library is available, prepend it to LIBS
-# so that udunits2 can be linked if it is installed.
-# If udunits2 contains its own expat functions,
-# these will be used in preference to the external library.
-AC_SEARCH_LIBS(XML_StopParser, expat)
-
-# Identify available version of udunits library (1 or 2),
-# and prepend the library to LIBS if it is not already linked.
-# Also check for udunits.h in places that depend on the udunits version,
-# and define macro HAVE_UDUNITS_H or HAVE_UDUNITS2_UDUNITS_H accordingly.
-udunits=0
-AC_SEARCH_LIBS(utFree, udunits2,
-  [
-    AC_CHECK_HEADERS(udunits2/udunits.h udunits.h, [udunits=2; break])
-  ], [
-    AC_SEARCH_LIBS(utScan, udunits,
-      [
-        AC_CHECK_HEADERS(udunits.h, [udunits=1; break])
-      ]
-    )
-  ]
-)
-
-# Define variables UDUNITS_LIB, UDUNITS_DBFILE and UDUNITS_DBVAR,
-# based on the version of udunits detected above.
-# Also define preprocessor macro HAVE_LIBUDUNITS or HAVE_LIBUDUNITS2.
-AS_IF([test $udunits == 2],
-  [
-    UDUNITS_LIB=udunits2
-    UDUNITS_DBFILE=udunits2.xml
-    UDUNITS_DBVAR="UDUNITS2_XML_PATH"
-    AC_DEFINE(HAVE_LIBUDUNITS2)
-  ],
-  [test $udunits == 1],
-  [
-    UDUNITS_LIB=udunits
-    UDUNITS_DBFILE=udunits.dat
-    UDUNITS_DBVAR="UDUNITS_PATH"
-    AC_DEFINE(HAVE_LIBUDUNITS)
-  ],
-  [AC_MSG_ERROR("unable to use udunits2 or udunits")]
-)
+# Prepend the library to LIBS if it is not already being linked,
+# and define preprocessor macro HAVE_LIBUDUNITS2.
+# Also search for udunits2.h,
+# and define macro HAVE_UDUNITS2_H or HAVE_UDUNITS2_UDUNITS2_H accordingly.
+AC_SEARCH_LIBS(ut_decode_time, udunits2, AC_DEFINE(HAVE_LIBUDUNITS2))
+AC_CHECK_HEADERS(udunits2.h udunits2/udunits2.h, [break])
 
 #-------------------------------------------------------------------------------#
 #  Do substitution                               	                 	#
 #-------------------------------------------------------------------------------#
 
-AC_SUBST(UDUNITS_LIB)
-AC_SUBST(UDUNITS_DBFILE)
-AC_SUBST(UDUNITS_DBVAR)
-AC_OUTPUT(R/load.R
-          src/Makevars)
+AC_OUTPUT(src/Makevars)
 
 #-------------------------------------------------------------------------------#
 #  Done                                                                         #

@@ -5,16 +5,11 @@ installation of the RNetCDF package and gives some further hints.
 Software Requirements
 =====================
 
-NetCDF library version 3.6.0 or greater (64-bit file support).
+NetCDF library version 4.1.3 or greater.
 
-UDUNITS library either version 1 or 2.1 or greater.
+UDUNITS library version 2.0.4 or greater (optional, for calendar functions).
 
-If the NetCDF library (version 4) is linked against HDF5, the HDF5 library
-must be located in the library search path.
-
-If using Fink on Mac OS X, be sure that the corresponding R version (either
-i386 or x86_64) is used (R32 or R64). Compiling with R64 against i386 will
-most likely lead to runtime errors.
+On platforms that support both 32- and 64-bit executables, ensure that the above libraries and the R executable are compatible. Mixing 32-bit and 64-bit software will generally not work.
 
 
 R CMD INSTALL Options
@@ -44,7 +39,7 @@ R CMD INSTALL Example
 =====================
 
 R CMD INSTALL --configure-args="CPPFLAGS=-I/sw/include \
-    LDFLAGS=-L/sw/lib LIBS=-lhdf5" RNetCDF_1.9-1.tar.gz
+    LDFLAGS=-L/sw/lib LIBS=-lhdf5" RNetCDF_2.0-3.tar.gz
 
 
 LD_LIBRARY_PATH
@@ -73,7 +68,7 @@ R CMD check Example
 ===================
 
 R CMD check --install-args="--configure-args='CPPFLAGS=-I/sw/include \
-    LDFLAGS=-L/sw/lib'" RNetCDF_1.9-1.tar.gz
+    LDFLAGS=-L/sw/lib'" RNetCDF_2.0-3.tar.gz
 
 
 Time units
@@ -81,6 +76,6 @@ Time units
 
 Common udunits databases are distributed with RNetCDF, and these are used
 by default when RNetCDF is loaded by R. However, a different units database
-may be used by specifying the appropriate file in environment variables
-UDUNITS2_XML_PATH (udunits2) or UDUNITS_PATH (udunits1).
+may be used by specifying the appropriate file in environment variable
+UDUNITS2_XML_PATH.
 

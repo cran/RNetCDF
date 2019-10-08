@@ -16,11 +16,12 @@
 
 \references{\url{http://www.unidata.ucar.edu/software/netcdf/}}
 
-\author{Pavel Michna}
+\author{Pavel Michna, Milton Woods}
 
 \examples{
 ##  Create a new NetCDF dataset and define two dimensions
-nc <- create.nc("sync.nc")
+file1 <- tempfile("sync_", fileext=".nc")
+nc <- create.nc(file1)
 
 dim.def.nc(nc, "station", 5)
 dim.def.nc(nc, "time", unlim=TRUE)
@@ -30,21 +31,28 @@ var.def.nc(nc, "time", "NC_INT", "time")
 var.def.nc(nc, "temperature", "NC_DOUBLE", c(0,1))
 
 ##  Define variable values
-mytime        <- c(1:2)
-mytemperature <- c(0.0, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9)
+mytime <- c(1:2)
+dim(mytime) <- c(2)
+mytemp <- c(0.0, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9)
+dim(mytemp) <- c(5,2)
 
 ##  Put the data
-var.put.nc(nc, "time", mytime, 1, length(mytime))
-var.put.nc(nc, "temperature", mytemperature, c(1,1), c(5,2))
+var.put.nc(nc, "time", mytime)
+var.put.nc(nc, "temperature", mytemp)
 
 ##  Synchronize to disk
 sync.nc(nc)
 
-##  Now the data can be read
-var.get.nc(nc, 0)
-var.get.nc(nc, "temperature")
+##  Open a new connection to the dataset and read data:
+nc2 <- open.nc(file1)
+newtime <- var.get.nc(nc2, 0)
+newtemp <- var.get.nc(nc2, "temperature")
+stopifnot(all.equal(newtime,mytime))
+stopifnot(all.equal(newtemp,mytemp))
 
 close.nc(nc)
+close.nc(nc2)
+unlink(file1)
 }
 
 \keyword{file}

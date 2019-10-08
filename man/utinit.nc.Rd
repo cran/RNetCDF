@@ -2,28 +2,23 @@
 
 \alias{utinit.nc}
 
-\title{Initialize the UDUNITS Library}
+\title{Initialize the UDUNITS2 Library}
 
-\description{Initialize the UDUNITS library.}
+\description{Initialize the UDUNITS2 library.}
 
 \usage{utinit.nc(path="")}
 
 \arguments{
-  \item{path}{Path to a units file containing initializing unit definitions.}
+  \item{path}{Path to an XML-formatted unit-database for UDUNITS2.}
 }
 
-\details{This function initializes the UDUNITS library. It is called by \code{.First.lib} when the package is loaded. Normally, the user does not need to call this function.
+\details{This function initializes the UDUNITS2 library. It is called by \code{.onLoad} when the package is loaded. Normally, the user does not need to call this function.
 
-If path is non-NULL and not empty, then it specifies a units file containing initializing unit definitions; otherwise, the environment variable \code{UDUNITS_PATH} is checked and, if it exists and is not empty, then it is assumed to contain the pathname of the units file; otherwise, a compile-time default pathname is used.      
+UDUNITS2 obtains a unit system by reading an XML file. The file name is given by argument \code{path}, if it is a non-empty character string. Otherwise, the file name is taken from environment variable \code{UDUNITS2_XML_PATH}, if it is a non-empty character string. By default, the file name is set to an XML file distributed with RNetCDF.
 }
 
 \references{\url{http://www.unidata.ucar.edu/software/udunits/}}
 
-\author{Pavel Michna}
-
-\examples{
-##  NOTE: The user will normally never need to call this function
-utinit.nc()
-}
+\author{Pavel Michna, Milton Woods}
 
 \keyword{utilities}

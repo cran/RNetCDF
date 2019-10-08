@@ -5,10 +5,11 @@ Where possible individual files also carry brief copyright notices.
 RNetCDF
 =======
 
-All files except those indicated later are Copyright (C) 2004-2017 Pavel Michna.
+All files except those indicated later are
+Copyright (C) 2004-2019 Pavel Michna and Milton Woods.
 They are licensed under the terms of the GNU General Public License:
 
-    This is free software; you can redistribute it and/or modify
+    This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation; either version 2 of the License, or
     (at your option) any later version.
@@ -18,9 +19,9 @@ They are licensed under the terms of the GNU General Public License:
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 See http://www.r-project.org/Licenses/GPL-2 for license details.
 
@@ -65,29 +66,6 @@ These uses of NetCDF are allowed by the NetCDF copyright:
     FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
     NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
     WITH THE ACCESS, USE OR PERFORMANCE OF THIS SOFTWARE.
-
-
-UDUNITS
-=======
-
-RNetCDF may be linked with the UDUNITS (version 1.x) library.
-To simplify distribution of RNetCDF in binary form,
-data files required by UDUNITS are included with RNetCDF,
-subject to the following license:
-
-    (C) Copyright 1992,1995 UCAR/Unidata
-
-    Permission to use, copy, modify, and distribute this software and its
-    documentation for any purpose without fee is hereby granted, provided that
-    the above copyright notice appears in all copies, that both that copyright
-    notice and this permission notice appear in supporting documentation, and
-    that the name of UCAR/Unidata not be used in advertising or publicity
-    pertaining to distribution of the software without specific, written prior
-    permission.  UCAR makes no representations about the suitability of this
-    software for any purpose.  It is provided "as is" without express or
-    implied warranty.  It is provided with no support and without obligation on
-    the part of UCAR or Unidata, to assist in its use, correction,
-    modification, or enhancement.
 
 
 UDUNITS2
