@@ -2,7 +2,7 @@
  *
  *  Name:       variable.c
  *
- *  Version:    2.0-3
+ *  Version:    2.1-1
  *
  *  Purpose:    NetCDF variable functions for RNetCDF
  *
@@ -59,12 +59,18 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
               SEXP filter_params)
 {
   int ncid, ii, jj, *dimids, ndims, varid, chunkmode, format, withnc4;
-  int deflate_mode, deflate_level, shuffle_mode, endian_mode, fletcher_mode;
-  int filter_mode, filtid, *filtparm;
+  int deflate_mode, deflate_level, shuffle_mode, fletcher_mode;
   size_t *chunksize_t;
   nc_type xtype;
   const char *varnamep;
   SEXP result;
+
+#ifdef HAVE_NC_INQ_VAR_ENDIAN
+  int endian_mode;
+#endif
+#ifdef HAVE_NC_INQ_VAR_FILTER
+  int filter_mode, filtid, *filtparm;
+#endif
 
   /*-- Convert arguments to netcdf ids ----------------------------------------*/
   ncid = asInteger (nc);
@@ -119,9 +125,11 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
 
     fletcher_mode = (asLogical (fletcher32) == TRUE);
 
+#ifdef HAVE_NC_INQ_VAR_FILTER
     filtid = asInteger (filter_id);
     filter_mode = (filtid != NA_INTEGER);
     filtparm = INTEGER (filter_params);
+#endif
   }
 
   /*-- Enter define mode ------------------------------------------------------*/
@@ -194,6 +202,7 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
 /* Find attributes related to missing values for a netcdf variable.
    On exit, relevant parameters are returned via double pointers to
      fill, min and max, which are either NULL or allocated by R_alloc.
+     The function returns the in-memory size (bytes) of a missing value.
    Argument mode specifies the attributes used for missing values:
      0 - _FillValue, or missing_value
      1 - _FillValue only
@@ -203,31 +212,26 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
          http://www.unidata.ucar.edu/software/netcdf/docs/attribute_conventions.html
    Example: R_nc_miss_att (ncid, varid, mode, &fill, &min, &max);
   */
-static void
+static size_t
 R_nc_miss_att (int ncid, int varid, int mode,
                void **fill, void **min, void **max)
 {
   size_t cnt, size;
-  int class;
-  nc_type atype, xtype, basetype;
+  nc_type atype, xtype;
   char *range;
   *fill = NULL;
   *min = NULL;
   *max = NULL;
 
-  /* Get details about type of netcdf variable */
+  /* Get details about type and size of netcdf variable */
   R_nc_check (nc_inq_vartype (ncid, varid, &xtype));
-  if (xtype > NC_MAX_ATOMIC_TYPE) {
-    /* Use base type of vlen or enum type */
-    R_nc_check (nc_inq_user_type (ncid, xtype, NULL, NULL, &basetype, NULL, &class));
-    if (class == NC_ENUM || class == NC_VLEN) {
-      xtype = basetype;
-    } else {
-      /* Other user-defined types can be handled by users,
-         based on any convention they choose.
-       */
-      return;
-    }
+  if (xtype == NC_CHAR ||
+      xtype == NC_STRING ||
+      xtype > NC_MAX_ATOMIC_TYPE) {
+    /* NetCDF attribute conventions describe the handling of missing values
+       in atomic numeric types. Let users handle other types as needed.
+     */
+    return 0;
   }
   R_nc_check (nc_inq_type (ncid, xtype, NULL, &size));
 
@@ -247,7 +251,7 @@ R_nc_miss_att (int ncid, int varid, int mode,
 
   } else if (mode == 3) {
     /* Let user code handle missing values */
-    return;
+    return 0;
 
   } else if (mode == 4) {
 
@@ -372,7 +376,7 @@ R_nc_miss_att (int ncid, int varid, int mode,
             **(unsigned long long **) fill = NC_FILL_UINT64;
             break;
           default:
-            return;
+            R_nc_error ("Default fill value not implemented");
         }
       }
 
@@ -406,7 +410,7 @@ R_nc_miss_att (int ncid, int varid, int mode,
             FILL2RANGE_REAL(double, DBL_EPSILON);
             break;
           default:
-            return;
+            R_nc_error ("Default valid range not implemented");
         }
       }
 
@@ -415,6 +419,7 @@ R_nc_miss_att (int ncid, int varid, int mode,
     R_nc_error ("Unknown mode for handling missing values");
 
   }
+  return size;
 }
 
 
@@ -457,9 +462,13 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
   R_nc_buf io;
   double add, scale, *addp=NULL, *scalep=NULL;
   void *fillp=NULL, *minp=NULL, *maxp=NULL;
+  size_t fillsize;
+
+#ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
   size_t bytes, slots;
   float preemption;
   double bytes_in, slots_in, preempt_in;
+#endif
 
   /*-- Convert arguments ------------------------------------------------------*/
   ncid = asInteger (nc);
@@ -507,7 +516,7 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
   }
 
   /*-- Get fill attributes (if any) -------------------------------------------*/
-  R_nc_miss_att (ncid, varid, inamode, &fillp, &minp, &maxp);
+  fillsize = R_nc_miss_att (ncid, varid, inamode, &fillp, &minp, &maxp);
 
   /*-- Get packing attributes (if any) ----------------------------------------*/
   if (isunpack) {
@@ -521,7 +530,7 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
 
   /*-- Allocate memory and read variable from file ----------------------------*/
   buf = R_nc_c2r_init (&io, NULL, ncid, xtype, ndims, ccount,
-                       israw, isfit, fillp, minp, maxp, scalep, addp);
+                       israw, isfit, fillsize, fillp, minp, maxp, scalep, addp);
 
   if (R_nc_length (ndims, ccount) > 0) {
     R_nc_check (nc_get_vara (ncid, varid, cstart, ccount, buf));
@@ -540,18 +549,30 @@ SEXP
 R_nc_inq_var (SEXP nc, SEXP var)
 {
   int ncid, varid, idim, ndims, natts, *dimids, storeprop, format, withnc4;
-  int shuffle, deflate, deflate_level, endian, fletcher;
-  int status, szip_options, szip_bits;
-  int filter_id;
-  size_t filter_nparams;
-  size_t *chunksize_t, cache_bytes, cache_slots;
-  float cache_preemption;
+  int shuffle, deflate, deflate_level, fletcher;
+  int status;
+  size_t *chunksize_t;
   double *chunkdbl;
   char varname[NC_MAX_NAME + 1], vartype[NC_MAX_NAME+1];
   nc_type xtype;
   SEXP result, rdimids, rchunks, rbytes, rslots, rpreempt,
        rshuffle, rdeflate, rendian, rfletcher,
        rszip_options, rszip_bits, rfilter_id, rfilter_params;
+
+#ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
+  size_t cache_bytes, cache_slots;
+  float cache_preemption;
+#endif
+#ifdef HAVE_NC_INQ_VAR_ENDIAN
+  int endian;
+#endif
+#ifdef HAVE_NC_INQ_VAR_SZIP
+  int szip_options, szip_bits;
+#endif
+#ifdef HAVE_NC_INQ_VAR_FILTER
+  int filter_id;
+  size_t filter_nparams;
+#endif
 
   /*-- Convert arguments to netcdf ids ----------------------------------------*/
   ncid = asInteger (nc);
@@ -745,9 +766,13 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
   const void *buf;
   double scale, add, *scalep=NULL, *addp=NULL;
   void *fillp=NULL, *minp=NULL, *maxp=NULL;
+  size_t fillsize;
+
+#ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
   size_t bytes, slots;
   float preemption;
   double bytes_in, slots_in, preempt_in;
+#endif
 
   /*-- Convert arguments to netcdf ids ----------------------------------------*/
   ncid = asInteger (nc);
@@ -793,7 +818,7 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
   }
 
   /*-- Get fill attributes (if any) -------------------------------------------*/
-  R_nc_miss_att (ncid, varid, inamode, &fillp, &minp, &maxp);
+  fillsize = R_nc_miss_att (ncid, varid, inamode, &fillp, &minp, &maxp);
 
   /*-- Get packing attributes (if any) ----------------------------------------*/
   if (ispack) {
@@ -807,7 +832,8 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
 
   /*-- Write variable to file -------------------------------------------------*/
   if (R_nc_length (ndims, ccount) > 0) {
-    buf = R_nc_r2c (data, ncid, xtype, ndims, ccount, fillp, scalep, addp);
+    buf = R_nc_r2c (data, ncid, xtype, ndims, ccount,
+                    fillsize, fillp, scalep, addp);
     R_nc_check (nc_put_vara (ncid, varid, cstart, ccount, buf));
   }
 
