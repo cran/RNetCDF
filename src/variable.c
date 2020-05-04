@@ -2,7 +2,7 @@
  *
  *  Name:       variable.c
  *
- *  Version:    2.1-1
+ *  Version:    2.3-1
  *
  *  Purpose:    NetCDF variable functions for RNetCDF
  *
@@ -63,7 +63,6 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
   size_t *chunksize_t;
   nc_type xtype;
   const char *varnamep;
-  SEXP result;
 
 #ifdef HAVE_NC_INQ_VAR_ENDIAN
   int endian_mode;
@@ -93,7 +92,7 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
   if (withnc4) {
     chunkmode = asLogical (chunking);
     if (ndims == 0) {
-      /* Chunking is not relevant to scalar variables */
+      /* Chunking is not allowed for scalar variables */
       chunkmode = NA_LOGICAL;
     }
     if (chunkmode == TRUE) {
@@ -167,11 +166,9 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
         xlength (filter_params), (const unsigned int*) filtparm));
     }
 #endif
-
   }
 
-  result = R_nc_protect (ScalarInteger (varid));
-  RRETURN(result);
+  return ScalarInteger (varid);
 }
 
 
@@ -376,7 +373,7 @@ R_nc_miss_att (int ncid, int varid, int mode,
             **(unsigned long long **) fill = NC_FILL_UINT64;
             break;
           default:
-            R_nc_error ("Default fill value not implemented");
+            error ("Default fill value not implemented");
         }
       }
 
@@ -410,13 +407,13 @@ R_nc_miss_att (int ncid, int varid, int mode,
             FILL2RANGE_REAL(double, DBL_EPSILON);
             break;
           default:
-            R_nc_error ("Default valid range not implemented");
+            error ("Default valid range not implemented");
         }
       }
 
     }
   } else {
-    R_nc_error ("Unknown mode for handling missing values");
+    error ("Unknown mode for handling missing values");
 
   }
   return size;
@@ -465,6 +462,7 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
   size_t fillsize;
 
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
+  int storeprop;
   size_t bytes, slots;
   float preemption;
   double bytes_in, slots_in, preempt_in;
@@ -482,8 +480,10 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
 
   /*-- Chunk cache options for netcdf4 files ----------------------------------*/
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
-  if (nc_get_var_chunk_cache(ncid, varid,
-                             &bytes, &slots, &preemption) == NC_NOERR) {
+  R_nc_check (nc_inq_var_chunking (ncid, varid, &storeprop, NULL));
+  if (storeprop == NC_CHUNKED) {
+    R_nc_check (nc_get_var_chunk_cache(ncid, varid,
+                                       &bytes, &slots, &preemption));
     bytes_in = asReal (cache_bytes);
     slots_in = asReal (cache_slots);
     preempt_in = asReal (cache_preemption);
@@ -529,15 +529,17 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
   R_nc_check (R_nc_enddef (ncid));
 
   /*-- Allocate memory and read variable from file ----------------------------*/
-  buf = R_nc_c2r_init (&io, NULL, ncid, xtype, ndims, ccount,
-                       israw, isfit, fillsize, fillp, minp, maxp, scalep, addp);
+  buf = NULL;
+  result = PROTECT(R_nc_c2r_init (&io, &buf, ncid, xtype, ndims, ccount,
+                     israw, isfit, fillsize, fillp, minp, maxp, scalep, addp));
 
   if (R_nc_length (ndims, ccount) > 0) {
     R_nc_check (nc_get_vara (ncid, varid, cstart, ccount, buf));
   }
-  result = R_nc_c2r (&io);
+  R_nc_c2r (&io);
 
-  RRETURN (result);
+  UNPROTECT(1);
+  return result;
 }
 
 
@@ -555,9 +557,7 @@ R_nc_inq_var (SEXP nc, SEXP var)
   double *chunkdbl;
   char varname[NC_MAX_NAME + 1], vartype[NC_MAX_NAME+1];
   nc_type xtype;
-  SEXP result, rdimids, rchunks, rbytes, rslots, rpreempt,
-       rshuffle, rdeflate, rendian, rfletcher,
-       rszip_options, rszip_bits, rfilter_id, rfilter_params;
+  SEXP result, rdimids, rchunks;
 
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
   size_t cache_bytes, cache_slots;
@@ -572,6 +572,7 @@ R_nc_inq_var (SEXP nc, SEXP var)
 #ifdef HAVE_NC_INQ_VAR_FILTER
   int filter_id;
   size_t filter_nparams;
+  SEXP rfilter_params;
 #endif
 
   /*-- Convert arguments to netcdf ids ----------------------------------------*/
@@ -585,169 +586,160 @@ R_nc_inq_var (SEXP nc, SEXP var)
 
   R_nc_check (nc_inq_var (ncid, varid, varname, &xtype, &ndims, NULL, &natts));
 
-  if (ndims > 0) {
-    rdimids = R_nc_protect (allocVector (INTSXP, ndims));
-    dimids = INTEGER (rdimids);
-    R_nc_check (nc_inq_vardimid (ncid, varid, dimids));
-    /* Return dimension ids in reverse (Fortran) order */
-    R_nc_rev_int (dimids, ndims);
-
-    rchunks = R_NilValue;
-    if (withnc4) {
-      R_nc_check (nc_inq_var_chunking (ncid, varid, &storeprop, NULL));
-      if (storeprop == NC_CHUNKED) {
-	rchunks = R_nc_protect (allocVector (REALSXP, ndims));
-	chunkdbl = REAL (rchunks);
-	chunksize_t = (size_t *) R_alloc (ndims, sizeof(size_t));
-	R_nc_check (nc_inq_var_chunking (ncid, varid, NULL, chunksize_t));
-	/* Return chunk sizes as double precision in reverse (Fortran) order */
-	R_nc_rev_size (chunksize_t, ndims);
-	for (idim=0; idim<ndims; idim++) {
-	  chunkdbl[idim] = chunksize_t[idim];
-	}
-      }
-
-#ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
-      R_nc_check (nc_get_var_chunk_cache (ncid, varid, &cache_bytes,
-                                          &cache_slots, &cache_preemption));
-      rbytes = R_nc_protect (ScalarReal (cache_bytes));
-      rslots = R_nc_protect (ScalarReal (cache_slots));
-      rpreempt = R_nc_protect (ScalarReal (cache_preemption));
-#else
-      rbytes = R_NilValue;
-      rslots = R_NilValue;
-      rpreempt = R_NilValue;
-#endif
-    }
-
-  } else {
-    /* Return single NA for scalars */
-    rdimids = R_nc_protect (ScalarInteger (NA_INTEGER));
-
-    /* Chunks not defined for scalars */
-    rchunks = R_NilValue;
-    rbytes = R_nc_protect (ScalarReal (NA_REAL));
-    rslots = R_nc_protect (ScalarReal (NA_REAL));
-    rpreempt = R_nc_protect (ScalarReal (NA_REAL));
-  }
-
-  if (withnc4) {
-    /* deflate and shuffle */
-    R_nc_check (nc_inq_var_deflate (ncid, varid, &shuffle,
-                                    &deflate, &deflate_level));
-    if (deflate) {
-      rdeflate = R_nc_protect (ScalarInteger (deflate_level));
-    } else {
-      rdeflate = R_nc_protect (ScalarInteger (NA_INTEGER));
-    }
-    rshuffle = R_nc_protect (ScalarLogical (shuffle));
-
-    /* endian */
-#ifdef HAVE_NC_INQ_VAR_ENDIAN
-    R_nc_check (nc_inq_var_endian (ncid, varid, &endian));
-    if (endian == NC_ENDIAN_LITTLE) {
-      rendian = R_nc_protect (ScalarLogical (0));
-    } else if (endian == NC_ENDIAN_BIG) {
-      rendian = R_nc_protect (ScalarLogical (1));
-    } else {
-      rendian = R_nc_protect (ScalarLogical (NA_LOGICAL));
-    }
-#else
-    rendian = R_NilValue;
-#endif
-
-    /* fletcher32 */
-    R_nc_check (nc_inq_var_fletcher32 (ncid, varid, &fletcher));
-    rfletcher = R_nc_protect (ScalarLogical (fletcher == NC_FLETCHER32));
-
-    /* szip */
-#ifdef HAVE_NC_INQ_VAR_SZIP
-    status = nc_inq_var_szip (ncid, varid, &szip_options, &szip_bits);
-    if (status == NC_NOERR) {
-      rszip_options = R_nc_protect (ScalarInteger (szip_options));
-      rszip_bits = R_nc_protect (ScalarInteger (szip_bits));
-#  if defined NC_EFILTER
-    } else if (status == NC_EFILTER) {
-      rszip_options = R_nc_protect (ScalarInteger (NA_INTEGER));
-      rszip_bits = R_nc_protect (ScalarInteger (NA_INTEGER));
-#  endif
-    } else {
-      R_nc_check (status);
-      return R_NilValue;
-    }
-#else
-    rszip_options = R_NilValue;
-    rszip_bits = R_NilValue;
-#endif
-
-    /* filter */
-#ifdef HAVE_NC_INQ_VAR_FILTER
-    status = nc_inq_var_filter (ncid, varid,
-                                (unsigned int *) &filter_id,
-                                &filter_nparams, NULL);
-    if (status == NC_NOERR) {
-      rfilter_id = R_nc_protect (ScalarInteger (filter_id));
-      rfilter_params = R_nc_protect (allocVector (INTSXP, filter_nparams));
-      if (filter_nparams > 0) {
-        R_nc_check (nc_inq_var_filter (ncid, varid, NULL, NULL,
-                      (unsigned int *) INTEGER (rfilter_params)));
-      }
-    } else if (status == NC_EFILTER) {
-      rfilter_id = R_nc_protect (ScalarInteger (NA_INTEGER));
-      rfilter_params = R_nc_protect (ScalarInteger (NA_INTEGER));
-    } else {
-      R_nc_check (status);
-      return R_NilValue;
-    }
-#else
-    rfilter_id = R_NilValue;
-    rfilter_params = R_NilValue;
-#endif
-
-  } else {
-    rdeflate = R_NilValue;
-    rshuffle = R_NilValue;
-    rendian = R_NilValue;
-    rfletcher = R_NilValue;
-    rszip_bits = R_NilValue;
-    rszip_options = R_NilValue;
-    rfilter_id = R_NilValue;
-    rfilter_params = R_NilValue;
-  }
-
-  /*-- Convert nc_type to char ------------------------------------------------*/
   R_nc_check (R_nc_type2str (ncid, xtype, vartype));
 
-  /*-- Construct the output list ----------------------------------------------*/
   if (withnc4) {
-    result = R_nc_protect (allocVector (VECSXP, 18));
+    result = PROTECT(allocVector (VECSXP, 18));
   } else {
-    result = R_nc_protect (allocVector (VECSXP, 6));
+    result = PROTECT(allocVector (VECSXP, 6));
   }
 
   SET_VECTOR_ELT (result, 0, ScalarInteger (varid));
   SET_VECTOR_ELT (result, 1, mkString (varname));
   SET_VECTOR_ELT (result, 2, mkString (vartype));
   SET_VECTOR_ELT (result, 3, ScalarInteger (ndims));
-  SET_VECTOR_ELT (result, 4, rdimids);
   SET_VECTOR_ELT (result, 5, ScalarInteger (natts));
 
-  if (withnc4) {
-    SET_VECTOR_ELT (result, 6, rchunks);
-    SET_VECTOR_ELT (result, 7, rbytes);
-    SET_VECTOR_ELT (result, 8, rslots);
-    SET_VECTOR_ELT (result, 9, rpreempt);
-    SET_VECTOR_ELT (result, 10, rdeflate);
-    SET_VECTOR_ELT (result, 11, rshuffle);
-    SET_VECTOR_ELT (result, 12, rendian);
-    SET_VECTOR_ELT (result, 13, rfletcher);
-    SET_VECTOR_ELT (result, 14, rszip_options);
-    SET_VECTOR_ELT (result, 15, rszip_bits);
-    SET_VECTOR_ELT (result, 16, rfilter_id);
-    SET_VECTOR_ELT (result, 17, rfilter_params);
+  if (ndims > 0) {
+    rdimids = PROTECT(allocVector (INTSXP, ndims));
+    SET_VECTOR_ELT (result, 4, rdimids);
+    UNPROTECT(1);
+    dimids = INTEGER (rdimids);
+    R_nc_check (nc_inq_vardimid (ncid, varid, dimids));
+    /* Return dimension ids in reverse (Fortran) order */
+    R_nc_rev_int (dimids, ndims);
+  } else {
+    /* Return single NA for scalar dimensions */
+    SET_VECTOR_ELT (result, 4, ScalarInteger (NA_INTEGER));
   }
 
-  RRETURN(result);
+  if (withnc4) {
+    R_nc_check (nc_inq_var_chunking (ncid, varid, &storeprop, NULL));
+
+    if (storeprop == NC_CHUNKED) {
+      rchunks = PROTECT(allocVector (REALSXP, ndims));
+      SET_VECTOR_ELT (result, 6, rchunks);
+      UNPROTECT(1);
+      chunkdbl = REAL (rchunks);
+      chunksize_t = (size_t *) R_alloc (ndims, sizeof(size_t));
+      R_nc_check (nc_inq_var_chunking (ncid, varid, NULL, chunksize_t));
+      /* Return chunk sizes as double precision in reverse (Fortran) order */
+      R_nc_rev_size (chunksize_t, ndims);
+      for (idim=0; idim<ndims; idim++) {
+	chunkdbl[idim] = chunksize_t[idim];
+      }
+
+#ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
+      R_nc_check (nc_get_var_chunk_cache (ncid, varid, &cache_bytes,
+					  &cache_slots, &cache_preemption));
+      SET_VECTOR_ELT (result, 7, ScalarReal (cache_bytes));
+      SET_VECTOR_ELT (result, 8, ScalarReal (cache_slots));
+      SET_VECTOR_ELT (result, 9, ScalarReal (cache_preemption));
+#else
+      SET_VECTOR_ELT (result, 7, R_NilValue);
+      SET_VECTOR_ELT (result, 8, R_NilValue);
+      SET_VECTOR_ELT (result, 9, R_NilValue);
+#endif
+    } else {
+      /* Chunks not defined */
+      SET_VECTOR_ELT (result, 6, R_NilValue);
+      SET_VECTOR_ELT (result, 7, ScalarReal (NA_REAL));
+      SET_VECTOR_ELT (result, 8, ScalarReal (NA_REAL));
+      SET_VECTOR_ELT (result, 9, ScalarReal (NA_REAL));
+    }
+
+    /* deflate and shuffle */
+    R_nc_check (nc_inq_var_deflate (ncid, varid, &shuffle,
+                                    &deflate, &deflate_level));
+    if (deflate) {
+      SET_VECTOR_ELT (result, 10, ScalarInteger (deflate_level));
+    } else {
+      SET_VECTOR_ELT (result, 10, ScalarInteger (NA_INTEGER));
+    }
+    SET_VECTOR_ELT (result, 11, ScalarLogical (shuffle));
+
+    /* endian */
+#ifdef HAVE_NC_INQ_VAR_ENDIAN
+    R_nc_check (nc_inq_var_endian (ncid, varid, &endian));
+    if (endian == NC_ENDIAN_LITTLE) {
+      SET_VECTOR_ELT (result, 12, ScalarLogical(0));
+    } else if (endian == NC_ENDIAN_BIG) {
+      SET_VECTOR_ELT (result, 12, ScalarLogical(1));
+    } else {
+      SET_VECTOR_ELT (result, 12, ScalarLogical(NA_LOGICAL));
+    }
+#else
+    SET_VECTOR_ELT (result, 12, R_NilValue);
+#endif
+
+    /* fletcher32 */
+    R_nc_check (nc_inq_var_fletcher32 (ncid, varid, &fletcher));
+    SET_VECTOR_ELT (result, 13, ScalarLogical (fletcher == NC_FLETCHER32));
+
+    /* szip */
+#ifdef HAVE_NC_INQ_VAR_SZIP
+    status = nc_inq_var_szip (ncid, varid, &szip_options, &szip_bits);
+    if (status == NC_NOERR) {
+      if (szip_options == 0) {
+        /* netcdf>=4.7.4 sets results to 0 if szip is not used */
+        SET_VECTOR_ELT (result, 14, ScalarInteger (NA_INTEGER));
+        SET_VECTOR_ELT (result, 15, ScalarInteger (NA_INTEGER));
+      } else {
+        SET_VECTOR_ELT (result, 14, ScalarInteger (szip_options));
+        SET_VECTOR_ELT (result, 15, ScalarInteger (szip_bits));
+      }
+#  if defined NC_EFILTER
+    } else if (status == NC_EFILTER) {
+      /* netcdf<4.7.4 returns NC_EFILTER if szip is not used */
+      SET_VECTOR_ELT (result, 14, ScalarInteger (NA_INTEGER));
+      SET_VECTOR_ELT (result, 15, ScalarInteger (NA_INTEGER));
+#  endif
+    } else {
+      error (nc_strerror (status));
+    }
+#else
+    SET_VECTOR_ELT (result, 14, R_NilValue);
+    SET_VECTOR_ELT (result, 15, R_NilValue);
+#endif
+
+    /* filter */
+#ifdef HAVE_NC_INQ_VAR_FILTER
+    if (storeprop == NC_CHUNKED) {
+      status = nc_inq_var_filter (ncid, varid,
+                                  (unsigned int *) &filter_id,
+                                  &filter_nparams, NULL);
+      if (status == NC_NOERR) {
+	SET_VECTOR_ELT (result, 16, ScalarInteger (filter_id));
+	rfilter_params = PROTECT(allocVector (INTSXP, filter_nparams));
+	SET_VECTOR_ELT (result, 17, rfilter_params);
+	UNPROTECT(1);
+	if (filter_nparams > 0) {
+	  R_nc_check (nc_inq_var_filter (ncid, varid, NULL, NULL,
+			(unsigned int *) INTEGER (rfilter_params)));
+	}
+#  ifdef NC_ENOFILTER
+      } else if (status == NC_EFILTER || status == NC_ENOFILTER ) {
+#  else
+      } else if (status == NC_EFILTER) {
+#  endif
+	SET_VECTOR_ELT (result, 16, ScalarInteger (NA_INTEGER));
+	SET_VECTOR_ELT (result, 17, ScalarInteger (NA_INTEGER));
+      } else {
+	error (nc_strerror (status));
+      }
+    } else {
+      /* netcdf>=4.7.4 returns NC_EINVAL for non-chunked variables */
+      SET_VECTOR_ELT (result, 16, ScalarInteger (NA_INTEGER));
+      SET_VECTOR_ELT (result, 17, ScalarInteger (NA_INTEGER));
+    }
+#else
+    SET_VECTOR_ELT (result, 16, R_NilValue);
+    SET_VECTOR_ELT (result, 17, R_NilValue);
+#endif
+  }
+
+  UNPROTECT(1);
+  return result;
 }
 
 
@@ -769,6 +761,7 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
   size_t fillsize;
 
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
+  int storeprop;
   size_t bytes, slots;
   float preemption;
   double bytes_in, slots_in, preempt_in;
@@ -784,8 +777,10 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
 
   /*-- Chunk cache options for netcdf4 files ----------------------------------*/
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
-  if (nc_get_var_chunk_cache(ncid, varid,
-                             &bytes, &slots, &preemption) == NC_NOERR) {
+  R_nc_check (nc_inq_var_chunking (ncid, varid, &storeprop, NULL));
+  if (storeprop == NC_CHUNKED) {
+    R_nc_check (nc_get_var_chunk_cache(ncid, varid,
+                                       &bytes, &slots, &preemption));
     bytes_in = asReal (cache_bytes);
     slots_in = asReal (cache_slots);
     preempt_in = asReal (cache_preemption);
@@ -837,7 +832,7 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
     R_nc_check (nc_put_vara (ncid, varid, cstart, ccount, buf));
   }
 
-  RRETURN (R_NilValue);
+  return R_NilValue;
 }
 
 
@@ -864,6 +859,6 @@ R_nc_rename_var (SEXP nc, SEXP var, SEXP newname)
   /*-- Rename the variable ----------------------------------------------------*/
   R_nc_check (nc_rename_var (ncid, varid, cnewname));
 
-  RRETURN(R_NilValue);
+  return R_NilValue;
 }
 

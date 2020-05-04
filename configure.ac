@@ -2,7 +2,7 @@
 #  Initialize                                                    		#
 #-------------------------------------------------------------------------------#
 
-AC_INIT([RNetCDF], [2.1-1])
+AC_INIT([RNetCDF], [2.3-1])
 
 #-------------------------------------------------------------------------------#
 #  Find the compiler and compiler options to use for tests                   	#
@@ -18,6 +18,14 @@ CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
 # Prepend user-specified CPPFLAGS to those from R:
 R_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
 CPPFLAGS="$CPPFLAGS $R_CPPFLAGS"
+
+#-------------------------------------------------------------------------------#
+#  Find sizes of selected data types                                            #
+#-------------------------------------------------------------------------------#
+
+AC_CHECK_SIZEOF([int])
+AC_CHECK_SIZEOF([long long])
+AC_CHECK_SIZEOF([size_t])
 
 #-------------------------------------------------------------------------------#
 #  Find NetCDF library and header files                                         #

@@ -2,7 +2,7 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.1-1
+ *  Version:    2.3-1
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
@@ -39,40 +39,12 @@
 
 #include "common.h"
 
-static int R_nc_protect_count = 0;
-
-SEXP
-R_nc_protect (SEXP obj)
-{
-  PROTECT(obj);
-  R_nc_protect_count++;
-  return obj;
-}
-
-
-void
-R_nc_unprotect (void)
-{
-  if (R_nc_protect_count > 0) {
-    UNPROTECT (R_nc_protect_count);
-    R_nc_protect_count = 0;
-  }
-}
-
-
-void
-R_nc_error(const char *msg)
-{
-  R_nc_unprotect ();
-  error (msg);
-}
-
 
 int
 R_nc_check(int status)
 {
   if (status != NC_NOERR) {
-    R_nc_error (nc_strerror (status));
+    error (nc_strerror (status));
   }
   return status;
 }
@@ -315,7 +287,7 @@ R_nc_strarg (SEXP str)
   if (xlength (str) > 0 && isString (str)) {
     return CHAR (STRING_ELT (str, 0));
   } else {
-    RERROR ("Expected character string as argument");
+    error ("Expected character string as argument");
   }
 }
 
@@ -328,42 +300,48 @@ R_nc_sizearg (SEXP size)
   if (xlength (size) > 0) {
     if (TYPEOF (size) == INTSXP) {
       int ival;
+      unsigned int uival;
       ival = INTEGER (size)[0];
-      erange = (ival < 0 || ival > SIZE_MAX || ival == NA_INTEGER);
+      uival = ival;
+#if SIZEOF_INT > SIZEOF_SIZE_T
+      erange = (ival == NA_INTEGER || ival < 0 || uival > SIZE_MAX);
+#else
+      erange = (ival == NA_INTEGER || ival < 0);
+#endif
       if (!erange) {
-        result = ival;
+        result = uival;
       }
     } else if (TYPEOF (size) == REALSXP) {
       if (R_nc_inherits (size, "integer64")) {
         long long llval;
+        unsigned long long ullval;
         llval = *(long long *) REAL (size);
-        /* Allow wrapping of negative to positive values
-           by converting from signed to unsigned long long
-         */
-        if (sizeof (long long) > sizeof (size_t)) {
-          erange = (llval < 0 || llval > SIZE_MAX || llval == NA_INTEGER64);
-        } else {
-          /* Allow wrapping of negative to positive values
-             in conversion from signed long long to (unsigned) size_t */
-          erange = (llval == NA_INTEGER64);
-        }
+        ullval = llval;
+        /* Assume integer64 can represent size of any object without wrapping */
+#if SIZEOF_LONG_LONG > SIZEOF_SIZE_T
+        erange = (llval == NA_INTEGER64 || llval < 0 || ullval > SIZE_MAX);
+#else
+        erange = (llval == NA_INTEGER64 || llval < 0);
+#endif
         if (!erange) {
-          result = llval;
+          result = ullval;
         }
       } else {
         double dval;
         dval = REAL (size)[0];
-        erange = (dval < 0 || dval > SIZE_MAX || ! R_FINITE (dval));
-        result = dval;
+        erange = (! R_FINITE (dval) || dval < 0 || dval > SIZE_MAX);
+        if (!erange) {
+          result = dval;
+        }
       }
     } else {
-      R_nc_error ("Size argument has unsupported R type");
+      error ("Size argument has unsupported R type");
     }
   } else {
-    R_nc_error ("Size argument must contain at least one numeric value");
+    error ("Size argument must contain at least one numeric value");
   }
   if (erange) {
-    R_nc_error ("Size argument is outside valid range");
+    error ("Size argument is outside valid range");
   }
   return result;
 }
