@@ -2,14 +2,14 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.3-1
+ *  Version:    2.4-2
  *
  *  Purpose:    RNetCDF initialisation
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2019 Pavel Michna, Milton Woods
+ *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
  *
  *=============================================================================*
  *
@@ -44,9 +44,9 @@ static const R_CallMethodDef callMethods[]  = {
   {"R_nc_put_att", (DL_FUNC) &R_nc_put_att, 5},
   {"R_nc_rename_att", (DL_FUNC) &R_nc_rename_att, 4},
   {"R_nc_close", (DL_FUNC) &R_nc_close, 1},
-  {"R_nc_create", (DL_FUNC) &R_nc_create, 5},
+  {"R_nc_create", (DL_FUNC) &R_nc_create, 9},
   {"R_nc_inq_file", (DL_FUNC) &R_nc_inq_file, 1},
-  {"R_nc_open", (DL_FUNC) &R_nc_open, 4},
+  {"R_nc_open", (DL_FUNC) &R_nc_open, 8},
   {"R_nc_sync", (DL_FUNC) &R_nc_sync, 1},
   {"R_nc_def_dim", (DL_FUNC) &R_nc_def_dim, 4},
   {"R_nc_inq_dim", (DL_FUNC) &R_nc_inq_dim, 2},
@@ -71,6 +71,7 @@ static const R_CallMethodDef callMethods[]  = {
   {"R_nc_def_var", (DL_FUNC) &R_nc_def_var, 12},
   {"R_nc_get_var", (DL_FUNC) &R_nc_get_var, 11},
   {"R_nc_inq_var", (DL_FUNC) &R_nc_inq_var, 2},
+  {"R_nc_par_var", (DL_FUNC) &R_nc_par_var, 3},
   {"R_nc_put_var", (DL_FUNC) &R_nc_put_var, 10},
   {"R_nc_rename_var", (DL_FUNC) &R_nc_rename_var, 3},
   {NULL, NULL, 0}

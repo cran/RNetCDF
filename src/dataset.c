@@ -2,14 +2,14 @@
  *
  *  Name:       dataset.c
  *
- *  Version:    2.3-1
+ *  Version:    2.4-2
  *
  *  Purpose:    NetCDF dataset functions for RNetCDF
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2019 Pavel Michna, Milton Woods
+ *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
  *
  *=============================================================================*
  *
@@ -46,6 +46,9 @@
 #include "common.h"
 #include "RNetCDF.h"
 
+#ifdef HAVE_NETCDF_PAR_H
+#include <netcdf_par.h>
+#endif
 
 /* Convert netcdf file format code to string label.
  */
@@ -57,13 +60,14 @@ R_nc_format2str (int format)
     return "classic";
 #ifdef NC_FORMAT_64BIT
   case NC_FORMAT_64BIT:
+    return "offset64";
 #elif defined NC_FORMAT_64BIT_OFFSET
   case NC_FORMAT_64BIT_OFFSET:
-#endif
     return "offset64";
-#ifdef NC_FORMAT_CDF5
-  case NC_FORMAT_CDF5:
-    return "cdf5";
+#endif
+#ifdef NC_FORMAT_64BIT_DATA
+  case NC_FORMAT_64BIT_DATA:
+    return "data64";
 #endif
   case NC_FORMAT_NETCDF4:
     return "netcdf4";
@@ -115,9 +119,10 @@ R_nc_finalizer (SEXP ptr)
 
 SEXP
 R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
-             SEXP format)
+             SEXP format, SEXP diskless, SEXP persist,
+             SEXP mpi_comm, SEXP mpi_info)
 {
-  int cmode, fillmode, old_fillmode, ncid, *fileid;
+  int cmode, fillmode, old_fillmode, ncid, *fileid, icommf, iinfof;
   SEXP Rptr, result;
   const char *filep;
 
@@ -127,6 +132,19 @@ R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
   } else {
     cmode = NC_NOCLOBBER;
   }
+
+#if defined NC_DISKLESS && defined NC_PERSIST
+  if (asLogical(diskless) == TRUE) {
+    cmode = cmode | NC_DISKLESS;
+  }
+  if (asLogical(persist) == TRUE) {
+    cmode = cmode | NC_PERSIST;
+  }
+#else
+  if (asLogical(diskless) == TRUE) {
+    error("NetCDF library does not support diskless files");
+  }
+#endif
 
   /*-- Determine which buffer scheme shall be used ----------------------------*/
   if (asLogical(share) == TRUE) {
@@ -147,12 +165,30 @@ R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
     cmode = cmode | NC_NETCDF4 | NC_CLASSIC_MODEL;
   } else if (R_nc_strcmp(format, "offset64")) {
     cmode = cmode | NC_64BIT_OFFSET;
+  } else if (R_nc_strcmp(format, "data64")) {
+#ifdef NC_64BIT_DATA
+    cmode = cmode | NC_64BIT_DATA;
+#else
+    error("NetCDF library does not support data64 format");
+#endif
   }
 
   /*-- Create the file --------------------------------------------------------*/
   filep = R_nc_strarg (filename);
   if (strlen (filep) > 0) {
-    R_nc_check (nc_create (R_ExpandFileName (filep), cmode, &ncid));
+    icommf = asInteger(mpi_comm);
+    iinfof = asInteger(mpi_info);
+    if (icommf == NA_INTEGER || iinfof == NA_INTEGER) {
+      R_nc_check (nc_create (R_ExpandFileName (filep), cmode, &ncid));
+    } else {
+#if defined HAVE_NETCDF_PAR_H && \
+    defined HAVE_NC_CREATE_PAR_FORTRAN
+      R_nc_check (nc_create_par_fortran (R_ExpandFileName (filep),
+                    cmode, icommf, iinfof, &ncid));
+#else
+      error("MPI not supported");
+#endif
+    }
   } else {
     error ("Filename must be a non-empty string");
   }
@@ -171,7 +207,6 @@ R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
   UNPROTECT(2);
   return result;
 }
-
 
 /*-----------------------------------------------------------------------------*\
  *  R_nc_inq_file()
@@ -216,9 +251,10 @@ R_nc_inq_file (SEXP nc)
 \*-----------------------------------------------------------------------------*/
 
 SEXP
-R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill)
+R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill,
+           SEXP diskless, SEXP persist, SEXP mpi_comm, SEXP mpi_info)
 {
-  int ncid, omode, fillmode, old_fillmode, *fileid;
+  int ncid, omode, fillmode, old_fillmode, *fileid, icommf, iinfof;
   const char *filep;
   SEXP Rptr, result;
 
@@ -228,6 +264,19 @@ R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill)
   } else {
     omode = NC_NOWRITE;
   }
+
+#if defined NC_DISKLESS && defined NC_PERSIST
+  if (asLogical(diskless) == TRUE) {
+    omode = omode | NC_DISKLESS;
+  }
+  if (asLogical(persist) == TRUE) {
+    omode = omode | NC_PERSIST;
+  }
+#else
+  if (asLogical(diskless) == TRUE) {
+    error("NetCDF library does not support diskless files");
+  }
+#endif
 
   if (asLogical(share) == TRUE) {
     omode = omode | NC_SHARE;
@@ -243,7 +292,19 @@ R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill)
   /*-- Open the file ----------------------------------------------------------*/
   filep = R_nc_strarg (filename);
   if (strlen (filep) > 0) {
-    R_nc_check (nc_open (R_ExpandFileName (filep), omode, &ncid));
+    icommf = asInteger(mpi_comm);
+    iinfof = asInteger(mpi_info);
+    if (icommf == NA_INTEGER || iinfof == NA_INTEGER) {
+      R_nc_check (nc_open (R_ExpandFileName (filep), omode, &ncid));
+    } else {
+#if defined HAVE_NETCDF_PAR_H && \
+    defined HAVE_NC_OPEN_PAR_FORTRAN
+      R_nc_check (nc_open_par_fortran (R_ExpandFileName (filep),
+                    omode, icommf, iinfof, &ncid)); 
+#else
+      error("MPI not supported");
+#endif
+    }
   } else {
     error ("Filename must be a non-empty string");
   }

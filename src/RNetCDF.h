@@ -2,14 +2,14 @@
  *
  *  Name:       RNetCDF.h
  *
- *  Version:    2.3-1
+ *  Version:    2.4-2
  *
  *  Purpose:    Declare RNetCDF functions callable from R
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2019 Pavel Michna, Milton Woods
+ *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
  *
  *=============================================================================*
  *
@@ -62,13 +62,15 @@ R_nc_close (SEXP ptr);
 
 SEXP
 R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
-             SEXP format);
+             SEXP format, SEXP diskless, SEXP persist,
+             SEXP mpi_comm, SEXP mpi_info);
 
 SEXP
 R_nc_inq_file (SEXP nc);
 
 SEXP
-R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill);
+R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill,
+           SEXP diskless, SEXP persist, SEXP mpi_comm, SEXP mpi_info);
 
 SEXP
 R_nc_sync (SEXP nc);
@@ -162,6 +164,9 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
 
 SEXP
 R_nc_inq_var (SEXP nc, SEXP var);
+
+SEXP
+R_nc_par_var (SEXP nc, SEXP var, SEXP access);
 
 SEXP
 R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,

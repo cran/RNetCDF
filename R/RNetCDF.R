@@ -7,7 +7,7 @@
 #  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
 #              Milton Woods (miltonjwoods@gmail.com)
 #
-#  Copyright:  (C) 2004-2019 Pavel Michna, Milton Woods
+#  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
 #
 #===============================================================================
 #
@@ -171,24 +171,30 @@ close.nc <- function(con, ...) {
 #-------------------------------------------------------------------------------
 
 create.nc <- function(filename, clobber = TRUE, share = FALSE, prefill = TRUE, 
-  format = "classic", large = FALSE) {
+  format = "classic", large = FALSE, diskless = FALSE, persist = FALSE,
+  mpi_comm=NULL, mpi_info=NULL) {
   #-- Check args -------------------------------------------------------------
   stopifnot(is.character(filename))
   stopifnot(is.logical(clobber))
   stopifnot(is.logical(share))
   stopifnot(is.logical(prefill))
   stopifnot(is.character(format) &&
-            format[1] %in% c("classic", "offset64", "netcdf4", "classic4"))
+    format[1] %in% c("classic", "offset64", "data64", "netcdf4", "classic4"))
   stopifnot(is.logical(large))
+  stopifnot(is.logical(diskless))
+  stopifnot(is.logical(persist))
+  stopifnot(is.null(mpi_comm) || is.numeric(mpi_comm))
+  stopifnot(is.null(mpi_info) || is.numeric(mpi_info))
 
   # Handle deprecated argument:
   if (isTRUE(large) && format[1] == "classic") {
     format <- "offset64"
     warning("Argument 'large' is deprecated; please specify 'format' instead")
   }
-  
+
   #-- C function call --------------------------------------------------------
-  nc <- .Call(R_nc_create, filename, clobber, share, prefill, format)
+  nc <- .Call(R_nc_create, filename, clobber, share, prefill, format,
+              diskless, persist, mpi_comm, mpi_info)
   
   attr(nc, "class") <- "NetCDF"
   return(invisible(nc))
@@ -269,15 +275,22 @@ file.inq.nc <- function(ncfile) {
 # open.nc()
 #-------------------------------------------------------------------------------
 
-open.nc <- function(con, write = FALSE, share = FALSE, prefill = TRUE, ...) {
+open.nc <- function(con, write = FALSE, share = FALSE, prefill = TRUE, 
+                    diskless = FALSE, persist = FALSE,
+                    mpi_comm=NULL, mpi_info=NULL, ...) {
   #-- Check args -------------------------------------------------------------
   stopifnot(is.character(con))
   stopifnot(is.logical(write))
   stopifnot(is.logical(share))
   stopifnot(is.logical(prefill))
+  stopifnot(is.logical(diskless))
+  stopifnot(is.logical(persist))
+  stopifnot(is.null(mpi_comm) || is.numeric(mpi_comm))
+  stopifnot(is.null(mpi_info) || is.numeric(mpi_info))
   
   #-- C function call --------------------------------------------------------
-  nc <- .Call(R_nc_open, con, write, share, prefill)
+  nc <- .Call(R_nc_open, con, write, share, prefill,
+              diskless, persist, mpi_comm, mpi_info)
   
   attr(nc, "class") <- "NetCDF"
   return(invisible(nc))
@@ -596,6 +609,24 @@ var.inq.nc <- function(ncfile, variable) {
   }
   
   return(nc)
+}
+
+
+#-------------------------------------------------------------------------------
+# var.par.nc()
+#-------------------------------------------------------------------------------
+
+var.par.nc <- function(ncfile, variable, access="NC_COLLECTIVE") {
+  #-- Check args -------------------------------------------------------------
+  stopifnot(class(ncfile) == "NetCDF")
+  stopifnot(is.character(variable) || is.numeric(variable))
+  stopifnot(is.character(access) &&
+            access[1] %in% c("NC_COLLECTIVE", "NC_INDEPENDENT"))
+
+  #-- C function call --------------------------------------------------------
+  nc <- .Call(R_nc_par_var, ncfile, variable, access)
+
+  return(invisible(NULL))
 }
 
 
