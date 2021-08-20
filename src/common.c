@@ -2,14 +2,14 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.4-2
+ *  Version:    2.5-2
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
+ *  Copyright (C) 2004-2021 Pavel Michna and Milton Woods.
  *
  *=============================================================================*
  *
@@ -289,61 +289,6 @@ R_nc_strarg (SEXP str)
   } else {
     error ("Expected character string as argument");
   }
-}
-
-
-size_t
-R_nc_sizearg (SEXP size)
-{
-  int erange=0;
-  size_t result=0;
-  if (xlength (size) > 0) {
-    if (TYPEOF (size) == INTSXP) {
-      int ival;
-      unsigned int uival;
-      ival = INTEGER (size)[0];
-      uival = ival;
-#if SIZEOF_INT > SIZEOF_SIZE_T
-      erange = (ival == NA_INTEGER || ival < 0 || uival > SIZE_MAX);
-#else
-      erange = (ival == NA_INTEGER || ival < 0);
-#endif
-      if (!erange) {
-        result = uival;
-      }
-    } else if (TYPEOF (size) == REALSXP) {
-      if (R_nc_inherits (size, "integer64")) {
-        long long llval;
-        unsigned long long ullval;
-        llval = *(long long *) REAL (size);
-        ullval = llval;
-        /* Assume integer64 can represent size of any object without wrapping */
-#if SIZEOF_LONG_LONG > SIZEOF_SIZE_T
-        erange = (llval == NA_INTEGER64 || llval < 0 || ullval > SIZE_MAX);
-#else
-        erange = (llval == NA_INTEGER64 || llval < 0);
-#endif
-        if (!erange) {
-          result = ullval;
-        }
-      } else {
-        double dval;
-        dval = REAL (size)[0];
-        erange = (! R_FINITE (dval) || dval < 0 || dval > SIZE_MAX);
-        if (!erange) {
-          result = dval;
-        }
-      }
-    } else {
-      error ("Size argument has unsupported R type");
-    }
-  } else {
-    error ("Size argument must contain at least one numeric value");
-  }
-  if (erange) {
-    error ("Size argument is outside valid range");
-  }
-  return result;
 }
 
 

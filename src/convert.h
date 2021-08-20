@@ -2,14 +2,14 @@
  *
  *  Name:       convert.h
  *
- *  Version:    2.4-2
+ *  Version:    2.5-2
  *
  *  Purpose:    Type conversions for RNetCDF
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
+ *  Copyright (C) 2004-2021 Pavel Michna and Milton Woods.
  *
  *=============================================================================*
  *
@@ -130,6 +130,13 @@ FUN (SEXP rv, size_t nr, TYPE fillval);
 
 R_NC_DIM_R2C_H (R_nc_dim_r2c_int, int)
 R_NC_DIM_R2C_H (R_nc_dim_r2c_size, size_t)
+
+
+/* Convert R numeric scalar argument to size_t.
+   Raise an error if R type or value is not compatible.
+ */
+size_t
+R_nc_sizearg (SEXP size);
 
 
 #endif /* RNC_CONVERT_H_INCLUDED */

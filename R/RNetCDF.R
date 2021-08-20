@@ -7,7 +7,7 @@
 #  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
 #              Milton Woods (miltonjwoods@gmail.com)
 #
-#  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
+#  Copyright (C) 2004-2021 Pavel Michna and Milton Woods.
 #
 #===============================================================================
 #
@@ -493,8 +493,8 @@ sync.nc <- function(ncfile) {
 var.def.nc <- function(ncfile, varname, vartype, dimensions,
                        chunking=NA, chunksizes=NULL,
                        deflate=NA, shuffle=FALSE, big_endian=NA,
-                       fletcher32=FALSE, filter_id=NA,
-                       filter_params=integer(0)) {
+                       fletcher32=FALSE, filter_id=integer(0),
+                       filter_params=list()) {
   #-- Check args -------------------------------------------------------------
   stopifnot(class(ncfile) == "NetCDF")
   stopifnot(is.character(varname))
@@ -511,8 +511,10 @@ var.def.nc <- function(ncfile, varname, vartype, dimensions,
   stopifnot(is.logical(shuffle))
   stopifnot(is.logical(big_endian))
   stopifnot(is.logical(fletcher32))
-  stopifnot(isTRUE(is.na(filter_id)) || is.numeric(filter_id))
-  stopifnot(is.integer(filter_params))
+  stopifnot(is.numeric(filter_id))
+  stopifnot(is.list(filter_params))
+  stopifnot(all(sapply(filter_params, FUN=is.numeric)))
+  stopifnot(length(filter_id) == length(filter_params))
 
   #-- C function call --------------------------------------------------------
   nc <- .Call(R_nc_def_var, ncfile, varname, vartype, dimensions,
@@ -1006,15 +1008,12 @@ utcal.nc <- function(unitstring, value, type = "n") {
     colnames(ut) <- c("year", "month", "day", "hour", "minute", "second")
     return(ut)
   } else if (isTRUE(type == "s")) {
-    x <- apply(ut, 1, function(x) {
-      paste(x[1], "-", sprintf("%02g", x[2]), "-", sprintf("%02g", 
-        x[3]), " ", sprintf("%02g", x[4]), ":", sprintf("%02g", x[5]), 
-        ":", sprintf("%02g", x[6]), sep = "")
-    })
+    x <- sprintf("%02g-%02g-%02g %02g:%02g:%02g",ut[,1],ut[,2],ut[,3],ut[,4],ut[,5],ut[,6])
     return(x)
   } else if (isTRUE(type == "c")) {
-    ct <- as.POSIXct(utinvcal.nc("seconds since 1970-01-01 00:00:00 +00:00", 
-      ut), tz = "UTC", origin = ISOdatetime(1970, 1, 1, 0, 0, 0, tz = "UTC"))
+    ct <- utinvcal.nc("seconds since 1970-01-01 00:00:00 +00:00", ut)
+    attr(ct, "class") <- c("POSIXct","POSIXt")
+    attr(ct, "tzone") <- "UTC"
     return(ct)
   }
 }

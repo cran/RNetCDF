@@ -2,7 +2,7 @@
 #  Initialize                                                    		#
 #-------------------------------------------------------------------------------#
 
-AC_INIT([RNetCDF], [2.4-2])
+AC_INIT([RNetCDF],[2.5-2])
 
 #-------------------------------------------------------------------------------#
 #  Find the compiler and compiler options to use for tests                   	#
@@ -68,11 +68,15 @@ AC_SEARCH_LIBS(nc_open, netcdf, [],
 # Check for the existence of optional netcdf routines.
 # C preprocessor macros HAVE_routine are defined for existing routines.
 AC_CHECK_FUNCS([nc_rename_grp nc_get_var_chunk_cache nc_inq_var_szip \
-  nc_inq_var_endian nc_inq_var_filter \
+  nc_inq_var_endian nc_def_var_filter nc_inq_var_filter_ids nc_inq_var_filter_info \
   nc_create_par_fortran nc_open_par_fortran nc_var_par_access])
 
-# Check for parallel I/O support.
+# Check for parallel header file.
 AC_CHECK_HEADERS(netcdf_par.h, [], [], [#include <netcdf.h>])
+
+# Check for filter header file.
+AC_CHECK_HEADERS(netcdf_filter.h, [], [], [#include <netcdf.h>])
+
 
 #-------------------------------------------------------------------------------#
 #  Find UDUNITS2 library and header files                                       #
@@ -107,7 +111,8 @@ AS_IF([test "x$enable_calendar" == xyes],
 #  Do substitution                               	                 	#
 #-------------------------------------------------------------------------------#
 
-AC_OUTPUT(src/Makevars)
+AC_CONFIG_FILES([src/Makevars])
+AC_OUTPUT
 
 #-------------------------------------------------------------------------------#
 #  Done                                                                         #

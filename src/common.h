@@ -2,14 +2,14 @@
  *
  *  Name:       common.h
  *
- *  Version:    2.4-2
+ *  Version:    2.5-2
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright:  (C) 2004-2020 Pavel Michna, Milton Woods
+ *  Copyright (C) 2004-2021 Pavel Michna and Milton Woods.
  *
  *=============================================================================*
  *
@@ -39,11 +39,6 @@
 #ifndef NC_MAX_ATOMIC_TYPE
   #define NC_MAX_ATOMIC_TYPE NC_STRING
 #endif
-
-#define NA_SIZE SIZE_MAX
-
-/* Definition of missing value used by bit64 package */
-#define NA_INTEGER64 LLONG_MIN
 
 /* Common error strings */
 static const char RNC_EDATALEN[]="Not enough data", \
@@ -103,13 +98,6 @@ R_nc_str2type (int ncid, const char *str, nc_type * xtype);
  */
 const char *
 R_nc_strarg (SEXP str);
-
-
-/* Convert R numeric scalar argument to size_t.
-   Raise an error if R type or value is not compatible.
- */
-size_t
-R_nc_sizearg (SEXP size);
 
 
 /* Enter netcdf define mode if possible.
