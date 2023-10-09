@@ -2,7 +2,7 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.6-2
+ *  Version:    2.7-1
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
@@ -56,6 +56,15 @@ R_nc_strcmp (SEXP var, const char *str)
   return (isString(var) &&
           xlength(var) >= 1 &&
           strcmp(CHAR (STRING_ELT (var, 0)), str) == 0);
+}
+
+
+size_t
+R_nc_strnlen (const char *str, char chr, size_t maxlen)
+{
+  char *nullchr;
+  nullchr = memchr(str, (int) chr, maxlen);
+  return (nullchr == NULL) ? maxlen : ((size_t) (nullchr - str));
 }
 
 

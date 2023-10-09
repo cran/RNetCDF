@@ -5,7 +5,7 @@ dnl Insert warning into generated C code:
  *
  *  Name:       convert.c
  *
- *  Version:    2.6-2
+ *  Version:    2.7-1
  *
  *  Purpose:    Type conversions for RNetCDF
  *
@@ -170,29 +170,44 @@ R_nc_allocArray (SEXPTYPE type, int ndims, const size_t *ccount) {
 
 
 static char *
-R_nc_strsxp_char (SEXP rstr, int ndim, const size_t *xdim)
+R_nc_strsxp_char (SEXP rstr, int ndim, const size_t *xdim,
+                  size_t fillsize, const void *fill)
 {
-  size_t ii, strlen, cnt;
-  char *carr, *thisstr;
+  size_t ii, rowlen, cnt, thislen;
+  char *carr, *thiscstr, fillval;
+  const char *thisrstr;
   if (ndim > 0) {
     /* Omit fastest-varying dimension from R character array */
-    strlen = xdim[ndim-1];
+    rowlen = xdim[ndim-1];
     cnt = R_nc_length (ndim-1, xdim);
   } else if (ndim == 0) {
     /* Scalar character */
-    strlen = 1;
+    rowlen = 1;
     cnt = 1;
   } else {
     /* Single string */
-    strlen = xdim[0];
+    rowlen = xdim[0];
     cnt = 1;
   }
   if ((size_t) xlength (rstr) < cnt) {
     error (RNC_EDATALEN);
   }
-  carr = R_alloc (cnt*strlen, sizeof (char));
-  for (ii=0, thisstr=carr; ii<cnt; ii++, thisstr+=strlen) {
-    strncpy(thisstr, CHAR( STRING_ELT (rstr, ii)), strlen);
+  carr = R_alloc (cnt*rowlen, sizeof (char));
+  /* Prefill the buffer with the defined value or null characters */
+  if (fill != NULL &&
+      fillsize == sizeof (char)) {
+    fillval = *(char *) fill;
+  } else {
+    fillval = '\0';
+  }
+  memset(carr, fillval, cnt*rowlen);
+  for (ii=0, thiscstr=carr; ii<cnt; ii++, thiscstr+=rowlen) {
+    /* Copy R string values to rows of the C buffer,
+       without changing fill values after each string.
+     */
+    thisrstr = CHAR( STRING_ELT (rstr, ii));
+    thislen = R_nc_strnlen (thisrstr, '\0', rowlen);
+    memcpy(thiscstr, thisrstr, thislen);
   }
   return carr;
 }
@@ -218,8 +233,19 @@ R_nc_char_strsxp_init (R_nc_buf *io)
 static void
 R_nc_char_strsxp (R_nc_buf *io)
 {
-  size_t ii, cnt, clen, rlen;
-  char *thisstr, *endstr;
+  size_t ii, cnt, clen, rlen, thislen;
+  char *thisstr, fillval;
+  int hasfill;
+  /* Find fill value */
+  if (io->fill != NULL &&
+      io->fillsize == sizeof (char)) {
+    hasfill = 1;
+    fillval = *(char *) io->fill;
+  } else {
+    hasfill = 0;
+  }
+  /* Find maximum length of strings returned to R,
+     based on array dimensions of the C buffer */
   if (io->ndim > 0) {
     /* Omit fastest-varying dimension from R character array */
     clen = io->xdim[(io->ndim)-1];
@@ -232,14 +258,19 @@ R_nc_char_strsxp (R_nc_buf *io)
   }
   rlen = (clen <= RNC_CHARSXP_MAXLEN) ? clen : RNC_CHARSXP_MAXLEN;
   cnt = xlength (io->rxp);
+  /* Convert rows of C buffer to separate R strings */
   for (ii=0, thisstr=io->cbuf; ii<cnt; ii++, thisstr+=clen) {
-    /* Check if string is null-terminated */
-    endstr = memchr (thisstr, 0, rlen);
-    if (!endstr) {
-      SET_STRING_ELT (io->rxp, ii, mkCharLen (thisstr, rlen));
+    /* Find string length to first fill value, not exceeding row length */
+    if (hasfill) {
+      thislen = R_nc_strnlen (thisstr, fillval, rlen);
     } else {
-      SET_STRING_ELT (io->rxp, ii, mkChar (thisstr));
+      thislen = rlen;
     }
+    /* Find string length to first null character, not exceeding thislen */
+    thislen = R_nc_strnlen (thisstr, '\0', thislen);
+    /* Convert row to R string, ensuring null termination */
+    SET_STRING_ELT (io->rxp, ii, PROTECT(mkCharLen (thisstr, thislen)));
+    UNPROTECT(1);
   }
 }
 
@@ -280,17 +311,29 @@ R_nc_char_raw (R_nc_buf *io)
 
 
 static const char **
-R_nc_strsxp_str (SEXP rstr, int ndim, const size_t *xdim)
+R_nc_strsxp_str (SEXP rstr, int ndim, const size_t *xdim,
+                 size_t fillsize, const void *fill)
 {
   size_t ii, cnt;
-  const char **cstr;
+  const char **cstr, *fillval;
+  SEXP thissxp;
+  int hasfill;
+  hasfill = (fill != NULL && fillsize == sizeof (size_t));
+  if (hasfill) {
+    fillval = *(const char **) fill;
+  }
   cnt = R_nc_length (ndim, xdim);
   if ((size_t) xlength (rstr) < cnt) {
     error (RNC_EDATALEN);
   }
   cstr = (const char **) R_alloc (cnt, sizeof(size_t));
   for (ii=0; ii<cnt; ii++) {
-    cstr[ii] = CHAR( STRING_ELT (rstr, ii));
+    thissxp = STRING_ELT (rstr, ii);
+    if (hasfill && thissxp == NA_STRING) {
+      cstr[ii] = fillval;
+    } else {
+      cstr[ii] = CHAR(thissxp);
+    }
   }
   return cstr;
 }
@@ -313,15 +356,22 @@ R_nc_str_strsxp (R_nc_buf *io)
 {
   size_t ii, nchar, cnt;
   char **cstr;
+  const char *fillval;
+  int hasfill;
+  hasfill = (io->fill != NULL && io->fillsize == sizeof (size_t));
+  if (hasfill) {
+    fillval = *(const char **) io->fill;
+  }
   cnt = xlength (io->rxp);
   cstr = (char **) io->cbuf;
   for (ii=0; ii<cnt; ii++) {
-    nchar = strlen (cstr[ii]);
-    if (nchar > RNC_CHARSXP_MAXLEN) {
+    if (hasfill && strcmp (cstr[ii], fillval) == 0) {
+      SET_STRING_ELT (io->rxp, ii, NA_STRING);
+    } else {
       /* Truncate excessively long strings while reading into R */
-      SET_STRING_ELT (io->rxp, ii, mkCharLen (cstr[ii], RNC_CHARSXP_MAXLEN));
-    } else if (nchar > 0) {
-      SET_STRING_ELT (io->rxp, ii, mkChar (cstr[ii]));
+      nchar = R_nc_strnlen (cstr[ii], '\0', RNC_CHARSXP_MAXLEN);
+      SET_STRING_ELT (io->rxp, ii, PROTECT(mkCharLen (cstr[ii], nchar)));
+      UNPROTECT(1);
     }
   }
   /* Free pointers to strings created by netcdf */
@@ -896,30 +946,47 @@ R_NC_C2R_NUM_UNPACK(R_nc_c2r_unpack_uint64, unsigned long long)
    An error is raised if input values cannot be converted to the vlen base type.
  */
 static nc_vlen_t *
-R_nc_vecsxp_vlen (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim)
+R_nc_vecsxp_vlen (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
+                  size_t fillsize, const void *fill,
+                  const double *scale, const double *add)
 {
-  size_t ii, cnt, len, size;
-  int baseclass;
+  size_t ii, cnt, len, size, basesize, basefillsize;
+  int baseclass, hasfill;
   nc_type basetype;
-  nc_vlen_t *vbuf;
+  nc_vlen_t *vbuf, *vfill;
   SEXP item;
+  const void *basefill;
 
   cnt = R_nc_length (ndim, xdim);
   if ((size_t) xlength (rv) < cnt) {
     error (RNC_EDATALEN);
   }
 
-  R_nc_check (nc_inq_user_type (ncid, xtype, NULL, NULL, &basetype, NULL, NULL));
+  R_nc_check (nc_inq_user_type (ncid, xtype, NULL, &size, &basetype, NULL, NULL));
   if (basetype > NC_MAX_ATOMIC_TYPE) {
-    R_nc_check (nc_inq_user_type (ncid, basetype, NULL, &size, NULL, NULL, &baseclass));
+    R_nc_check (nc_inq_user_type (ncid, basetype, NULL, &basesize, NULL, NULL, &baseclass));
   } else {
+    R_nc_check (nc_inq_type (ncid, basetype, NULL, &basesize)); 
     baseclass = NC_NAT;
-    size = 0;
   }
 
+  /* Check if fill value is properly defined */
+  hasfill = (fill != NULL &&
+             fillsize == size);
+  basefill = NULL;
+  basefillsize = 0;
+  if (hasfill) {
+    vfill = (nc_vlen_t *) fill;
+    if (vfill[0].len > 0) {
+      basefill = vfill[0].p;
+      basefillsize = basesize;
+    }
+  }
+
+  /* Convert list items to vlen elements */
   vbuf = (nc_vlen_t *) R_alloc (cnt, sizeof(nc_vlen_t));
   for (ii=0; ii<cnt; ii++) {
-    item = VECTOR_ELT(rv, ii);
+    item = PROTECT(VECTOR_ELT(rv, ii));
     if (basetype == NC_CHAR && TYPEOF (item) == STRSXP) {
       if (xlength (item) > 0) {
         len = strlen (CHAR (STRING_ELT (item, 0)));
@@ -927,17 +994,18 @@ R_nc_vecsxp_vlen (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim
         len = 0;
       }
     } else if (baseclass == NC_OPAQUE && TYPEOF (item) == RAWSXP) {
-      len = xlength(item) / size;
+      len = xlength(item) / basesize;
     } else {
       len = xlength(item);
     }
     vbuf[ii].len = len;
     if (len > 0) {
-      vbuf[ii].p = (void *) R_nc_r2c (item, ncid, basetype,
-                                      -1, &len, 0, NULL, NULL, NULL);
+      vbuf[ii].p = (void *) R_nc_r2c (item, ncid, basetype, -1, &len,
+                                      basefillsize, basefill, scale, add);
     } else {
       vbuf[ii].p = NULL;
     }
+    UNPROTECT(1);
   }
   return vbuf;
 }
@@ -970,23 +1038,49 @@ R_nc_vlen_vecsxp_init (R_nc_buf *io)
 static void
 R_nc_vlen_vecsxp (R_nc_buf *io)
 {
-  size_t ii, cnt;
+  size_t ii, cnt, size, basesize, basefillsize;
   nc_type basetype;
-  nc_vlen_t *vbuf;
+  nc_vlen_t *vbuf, *vfill;
   R_nc_buf tmpio;
   SEXP tmprxp;
+  int baseclass, hasfill;
+  const void *basefill;
 
   vbuf = io->cbuf;
   cnt = xlength (io->rxp);
-  R_nc_check (nc_inq_user_type (io->ncid, io->xtype, NULL, NULL, &basetype, NULL, NULL));
 
+  R_nc_check (nc_inq_user_type (io->ncid, io->xtype, NULL, &size, &basetype, NULL, NULL));
+  if (basetype > NC_MAX_ATOMIC_TYPE) {
+    R_nc_check (nc_inq_user_type (io->ncid, basetype, NULL, &basesize, NULL, NULL, &baseclass));
+  } else {
+    R_nc_check (nc_inq_type (io->ncid, basetype, NULL, &basesize)); 
+    baseclass = NC_NAT;
+  }
+
+  /* Check if fill value is properly defined */
+  hasfill = (io->fill != NULL &&
+             io->fillsize == size);
+  basefill = NULL;
+  basefillsize = 0;
+  if (hasfill) {
+    vfill = (nc_vlen_t *) io->fill;
+    if (vfill[0].len > 0) {
+      basefill = vfill[0].p;
+      basefillsize = basesize;
+    }
+  }
+
+  /* Convert vlen elements to list items */
   for (ii=0; ii<cnt; ii++) {
     tmprxp = PROTECT(R_nc_c2r_init (&tmpio, &(vbuf[ii].p), io->ncid, basetype, -1,
                        &(vbuf[ii].len), io->rawchar, io->fitnum,
-                       0, NULL, NULL, NULL, NULL, NULL));
+                       basefillsize, basefill, io->min, io->max, io->scale, io->add));
     R_nc_c2r (&tmpio);
     SET_VECTOR_ELT (io->rxp, ii, tmprxp);
-    nc_free_vlen(&(vbuf[ii]));
+    if (vbuf[ii].len > 0) {
+      /* nc_free_vlen fails if length is 0; no need to free anyway */
+      nc_free_vlen(&(vbuf[ii]));
+    }
     UNPROTECT(1);
   }
 }
@@ -1063,13 +1157,14 @@ R_nc_opaque_raw (R_nc_buf *io)
    Memory for the result is allocated if necessary (and freed by R).
  */
 static void *
-R_nc_factor_enum (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim)
+R_nc_factor_enum (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
+                  size_t fillsize, const void *fill)
 {
   SEXP levels;
   size_t size, imem, nmem, ilev, nlev, *ilev2mem, ifac, nfac, cnt;
   char *memnames, *memname, *memvals, *memval, *out;
   const char **levnames;
-  int ismatch, *in, inval;
+  int hasfill, ismatch, *in, inval;
 
   /* Extract indices and level names of R factor */
   in = INTEGER (rv);
@@ -1116,6 +1211,10 @@ R_nc_factor_enum (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim
     }
   }
 
+  /* Check if fill value is properly defined */
+  hasfill = (fill != NULL &&
+             fillsize == size);
+
   /* Convert factor indices to enum values */
   nfac = xlength (rv);
   cnt = R_nc_length (ndim, xdim);
@@ -1129,6 +1228,8 @@ R_nc_factor_enum (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim
     if (0 < inval && (size_t) inval <= nlev) {
       imem = ilev2mem[inval-1];
       memcpy(out + ifac*size, memvals + imem*size, size);
+    } else if (hasfill && inval == NA_INTEGER) {
+      memcpy(out + ifac*size, fill, size);
     } else {
       error ("Invalid index in factor");
     }
@@ -1179,7 +1280,7 @@ R_nc_enum_factor (R_nc_buf *io)
   SEXP levels, env, cmd, symbol, index;
   size_t size, nmem, ifac, nfac;
   char *memname, *memval, *work, *inval;
-  int ncid, imem, imemmax, *out;
+  int ncid, imem, imemmax, *out, any_undef;
   nc_type xtype;
 
   /* Get size and number of enum members */
@@ -1209,9 +1310,20 @@ R_nc_enum_factor (R_nc_buf *io)
   imemmax = nmem; // netcdf member index is int
   for (imem=0; imem<imemmax; imem++) {
     R_nc_check (nc_inq_enum_member (ncid, xtype, imem, memname, memval));
-    SET_STRING_ELT (levels, imem, mkChar (memname));
+    SET_STRING_ELT (levels, imem, PROTECT(mkChar (memname)));
     symbol = PROTECT (R_nc_char_symbol (memval, size, work));
     index = PROTECT (ScalarInteger (imem+1));
+    defineVar (symbol, index, env);
+    UNPROTECT(3);
+  }
+
+  /* If fill value is defined, convert matching enum values to NA by storing
+     the fill value with index NA in the hashed environment created above.
+   */
+  if (io->fill != NULL &&
+      io->fillsize == size) {
+    symbol = PROTECT (R_nc_char_symbol (io->fill, size, work));
+    index = PROTECT (ScalarInteger( NA_INTEGER));
     defineVar (symbol, index, env);
     UNPROTECT(2);
   }
@@ -1222,15 +1334,23 @@ R_nc_enum_factor (R_nc_buf *io)
   nfac = xlength (io->rxp);
 
   out = io->rbuf;
+  any_undef = 0;
   for (ifac=0, inval=io->cbuf; ifac<nfac; ifac++, inval+=size) {
     symbol = PROTECT(R_nc_char_symbol (inval, size, work));
     index = findVarInFrame3 (env, symbol, TRUE);
     UNPROTECT(1);
     if (index == R_UnboundValue) {
-      error ("Unknown enum value in variable");
+      /* Convert undefined enum values to NA,
+         and issue a warning later */
+      any_undef = 1;
+      out[ifac] = NA_INTEGER;
     } else {
       out[ifac] = INTEGER (index)[0];
     }
+  }
+
+  if (any_undef) {
+    warning("Undefined enum value(s) converted to NA");
   }
 
   /* Allow garbage collection of env and levels */
@@ -1244,19 +1364,24 @@ R_nc_enum_factor (R_nc_buf *io)
    Memory for the result is allocated (and freed by R).
  */
 static void *
-R_nc_vecsxp_compound (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim)
+R_nc_vecsxp_compound (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
+                      size_t fillsize, const void *fill)
 {
   size_t cnt, size, nfld, offset, fldsize, fldcnt, fldlen,
-         nlist, ilist, ielem, *dimsizefld;
+         nlist, ilist, ielem, *dimsizefld, fillfldlen;
   nc_type typefld;
-  int ifldmax, ifld, idimfld, ndimfld, *dimlenfld, ismatch;
+  int ifldmax, ifld, idimfld, ndimfld, *dimlenfld, ismatch, hasfill;
   char *bufout, namefld[NC_MAX_NAME+1];
-  const char *buffld;
+  const char *buffld, *fillfld;
   void *highwater;
   SEXP namelist;
 
   /* Get size and number of fields in compound type */
   R_nc_check (nc_inq_compound(ncid, xtype, NULL, &size, &nfld));
+
+  /* Check if fill value is properly defined */
+  hasfill = (fill != NULL &&
+             fillsize == size);
 
   /* Check names attribute of R list */
   namelist = PROTECT(getAttrib (rv, R_NamesSymbol));
@@ -1313,12 +1438,25 @@ R_nc_vecsxp_compound (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *
     for (idimfld=0; idimfld<ndimfld; idimfld++) {
       dimsizefld[idimfld+1] = dimlenfld[idimfld];
     }
-    buffld = R_nc_r2c (VECTOR_ELT (rv, ilist), ncid, typefld, ndimfld+1, dimsizefld,
-                       0, NULL, NULL, NULL);
-
-    /* Copy elements from the field array into the compound array */
     fldcnt = R_nc_length (ndimfld, dimsizefld+1);
     fldlen = fldsize * fldcnt;
+    if (hasfill && fldlen > 0) {
+      /* Use the first element of this field in fill as the fill value,
+         because fill values are generally required to be scalar;
+         this allows us to convert arrays with a single R_nc_r2c call.
+       */
+      fillfld = (const char *) fill + offset;
+      fillfldlen = fldsize;
+    } else {
+      fillfld = NULL;
+      fillfldlen = 0;
+    }
+    buffld = R_nc_r2c (PROTECT(VECTOR_ELT (rv, ilist)),
+                       ncid, typefld, ndimfld+1, dimsizefld,
+                       fillfldlen, fillfld, NULL, NULL);
+    UNPROTECT(1);
+
+    /* Copy elements from the field array into the compound array */
     for (ielem=0; ielem<cnt; ielem++) {
       memcpy (bufout+ielem*size+offset, buffld+ielem*fldlen, fldlen);
     }
@@ -1373,18 +1511,25 @@ static void
 R_nc_compound_vecsxp (R_nc_buf *io)
 {
   int ncid, ifld, ifldmax, idim, ndim, idimfld, ndimfld, *dimlenfld, ndimslice;
+  int hasfill;
   nc_type xtype, typefld;
   size_t size, nfld, cnt, offset, fldsize, *dimslice, fldcnt, fldlen, ielem;
+  size_t fillfldlen;
   SEXP namelist, rxpfld;
   char namefld[NC_MAX_NAME+1], *buffld, *bufcmp;
   R_nc_buf iofld;
   void *highwater;
+  const char *fillfld;
 
   /* Get size and number of fields in compound type */
   ncid = io->ncid;
   xtype = io->xtype;
   R_nc_check (nc_inq_compound(ncid, xtype, NULL, &size, &nfld));
   cnt = R_nc_length (io->ndim, io->xdim);
+
+  /* Check if fill value is properly defined */
+  hasfill = (io->fill != NULL &&
+             io->fillsize == size);
 
   /* Set names attribute of R list */
   namelist = PROTECT(R_nc_allocArray (STRSXP, -1, &nfld));
@@ -1408,7 +1553,8 @@ R_nc_compound_vecsxp (R_nc_buf *io)
     R_nc_check (nc_inq_type (ncid, typefld, NULL, &fldsize));
 
     /* Set the field name in the R list */
-    SET_STRING_ELT (namelist, ifld, mkChar (namefld));
+    SET_STRING_ELT (namelist, ifld, PROTECT(mkChar (namefld)));
+    UNPROTECT(1);
 
     /* Append field dimensions to the variable dimensions */
     ndim = io->ndim;
@@ -1429,15 +1575,22 @@ R_nc_compound_vecsxp (R_nc_buf *io)
       dimslice[ndim+idimfld] = dimlenfld[idimfld];
     }
     fldcnt = R_nc_length (ndimfld, dimslice+ndim);
+    fldlen = fldsize * fldcnt;
 
     /* Prepare to convert field data from C to R */
+    if (hasfill && fldlen > 0) {
+      fillfld = (const char *) io->fill + offset;
+      fillfldlen = fldsize;
+    } else {
+      fillfld = NULL;
+      fillfldlen = 0;
+    }
     buffld = NULL;
     rxpfld = PROTECT(R_nc_c2r_init (&iofld, (void **) &buffld, ncid, typefld,
                ndimslice, dimslice, io->rawchar, io->fitnum,
-               0, NULL, NULL, NULL, NULL, NULL));
+               fillfldlen, fillfld, NULL, NULL, NULL, NULL));
 
     /* Copy elements from the compound array into the field array */
-    fldlen = fldsize * fldcnt;
     for (ielem=0; ielem<cnt; ielem++) {
       memcpy (buffld+ielem*fldlen, bufcmp+ielem*size+offset, fldlen);
     }
@@ -1525,7 +1678,7 @@ R_nc_r2c (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
     if (xtype > NC_MAX_ATOMIC_TYPE &&
         class == NC_ENUM &&
         R_nc_inherits (rv, "factor")) {
-      return R_nc_factor_enum (rv, ncid, xtype, ndim, xdim);
+      return R_nc_factor_enum (rv, ncid, xtype, ndim, xdim, fillsize, fill);
     }
     break;
   case REALSXP:
@@ -1630,9 +1783,9 @@ R_nc_r2c (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
   case STRSXP:
     switch (xtype) {
     case NC_CHAR:
-      return R_nc_strsxp_char (rv, ndim, xdim);
+      return R_nc_strsxp_char (rv, ndim, xdim, fillsize, fill);
     case NC_STRING:
-      return R_nc_strsxp_str (rv, ndim, xdim);
+      return R_nc_strsxp_str (rv, ndim, xdim, fillsize, fill);
     }
     break;
   case RAWSXP:
@@ -1646,9 +1799,9 @@ R_nc_r2c (SEXP rv, int ncid, nc_type xtype, int ndim, const size_t *xdim,
     if (xtype > NC_MAX_ATOMIC_TYPE) {
       switch (class) {
       case NC_VLEN:
-        return R_nc_vecsxp_vlen (rv, ncid, xtype, ndim, xdim);
+        return R_nc_vecsxp_vlen (rv, ncid, xtype, ndim, xdim, fillsize, fill, scale, add);
       case NC_COMPOUND:
-        return R_nc_vecsxp_compound (rv, ncid, xtype, ndim, xdim);
+        return R_nc_vecsxp_compound (rv, ncid, xtype, ndim, xdim, fillsize, fill);
       }
     }
     break;

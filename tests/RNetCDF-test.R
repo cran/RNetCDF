@@ -2,7 +2,7 @@
 #
 #  Name:       RNetCDF-test.R
 #
-#  Version:    2.6-2
+#  Version:    2.7-1
 #
 #  Purpose:    Test functions to the NetCDF interface for R.
 #
@@ -29,6 +29,23 @@
 #
 #===============================================================================#
 
+# Fail on warnings:
+options(warn=2)
+
+# tools::assertWarning is not defined in old R versions,
+# so define a local function with similar behaviour:
+assertWarning <- function(expr) {
+  warn <- FALSE
+  withCallingHandlers(expr,
+    warning=function(w) {
+      warn <<- TRUE
+      invokeRestart("muffleWarning")
+    }
+  )
+  if (!warn) {
+    stop("Expected warning from expression, but none occurred")
+  }
+}
 
 #===============================================================================#
 #  Load library
@@ -36,6 +53,17 @@
 
 library(RNetCDF)
 has_bit64 <- require(bit64)
+loadNamespace("tools")
+
+
+#===============================================================================#
+#  Optional NetCDF features detected during package installation.
+#  Note that config.nc is not intended for user code.
+#  If necessary, users can handle missing features using 'try'.
+#===============================================================================#
+
+cfg <- config.nc()
+
 
 #===============================================================================#
 #  Run tests
@@ -72,27 +100,30 @@ tally <- NULL
 
 ##  Create a new NetCDF dataset and define dimensions
 for (format in c("classic","offset64","data64","classic4","netcdf4")) {
+
   ncfile <- tempfile(paste("RNetCDF-test", format, "", sep="_"),
                      fileext=".nc")
   cat("Test", format, "file format in", ncfile, "...\n")
 
-  if (format == "data64") {
+  if (format == "data64" && !cfg$data64) {
+    message("NetCDF library does not support file format data64")
     nc <- try(create.nc(ncfile, format=format), silent=TRUE)
-    if (inherits(nc, "try-error")) {
-      warning("NetCDF library may not support file format ", format)
-      next
-    }
-  } else {
-    nc <- create.nc(ncfile, format=format)
+    tally <- testfun(inherits(nc, "try-error"), TRUE, tally)
+    unlink(ncfile)
+    next
   }
+
+  nc <- create.nc(ncfile, format=format)
+  tally <- testfun(TRUE, TRUE, tally)
 
   # Show library version:
   libvers <- file.inq.nc(nc)$libvers
   cat("Version of netcdf library ... ", libvers, "\n")
+  verstr <- sub(' .*', '', file.inq.nc(nc)$libvers)
 
   nstation <- 5
   ntime <- 2
-  nstring <- 32
+  nstring <- 7
   nempty <- 0
 
   cat("Defining dimensions ...\n")
@@ -122,16 +153,20 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
     inq_vector_char <- list(id=id_vector_char, name="vector_char", class="vlen",
                             size=NA, basetype="NC_CHAR")
 
+    id_vector_string <- type.def.nc(nc, "vector_string", "vlen", basetype="NC_STRING")
+    inq_vector_string <- list(id=id_vector_string, name="vector_string", class="vlen",
+                              size=NA, basetype="NC_STRING")
+
     id_vector_blob <- type.def.nc(nc, "vector_blob", "vlen", basetype=id_blob)
     inq_vector_blob <- list(id=id_vector_blob, name="vector_blob", class="vlen",
                             size=NA, basetype="blob")
 
-    id_factor <- type.def.nc(nc, "factor", "enum", basetype="NC_UBYTE",
-                             names=c("peanut butter", "jelly"),
-                             values=c(101, 102))
+    id_factor <- type.def.nc(nc, "factor", "enum", basetype="NC_USHORT",
+                             names=c("NA", "peanut butter", "jelly"),
+                             values=c(100, 101, 102))
     inq_factor <- list(id=id_factor, name="factor", class="enum",
-                       size=1, basetype="NC_UBYTE",
-                       value=c("peanut butter"=101,"jelly"=102))
+                       size=2, basetype="NC_USHORT",
+                       value=c("NA"=100,"peanut butter"=101,"jelly"=102))
 
     id_struct <- type.def.nc(nc, "struct", "compound",
                              names=c("siteid", "height", "colour"),
@@ -142,8 +177,18 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
                        subtype=c(siteid="NC_INT",height="NC_DOUBLE",colour="NC_SHORT"),
                        dimsizes=list("siteid"=NULL,"height"=NULL,"colour"=c(3)))
 
-    typeids <- c(id_blob,id_vector,id_vector_char,id_vector_blob,id_factor,id_struct)
+    typeids <- c(id_blob, id_vector, id_vector_char, id_vector_string,
+                 id_vector_blob, id_factor, id_struct)
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      id_vector_vector <- type.def.nc(nc, "vector_vector", "vlen", basetype=id_vector)
+      inq_vector_vector <- list(id=id_vector_vector, name="vector_vector", class="vlen",
+                              size=NA, basetype="vector")
+      typeids <- c(typeids, id_vector_vector)
+    }
+
     tally <- testfun(TRUE, TRUE, tally)
+
   }
 
   ##  Define variables
@@ -168,11 +213,12 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
 
   var.def.nc(nc, "packvar", "NC_BYTE", c("station"))
   var.def.nc(nc, "name", "NC_CHAR", c("max_string_length", "station"))
+  var.def.nc(nc, "name_fill", "NC_CHAR", c("max_string_length", "station"))
   var.def.nc(nc, "qcflag", "NC_CHAR", c("station"))
   var.def.nc(nc, "int0", "NC_INT", NA)
   var.def.nc(nc, "char0", "NC_CHAR", NA)
   var.def.nc(nc, "numempty", "NC_FLOAT", c("station","empty"))
-  varcnt <- 8
+  varcnt <- 9
 
   numtypes <- c("NC_BYTE", "NC_SHORT", "NC_INT", "NC_FLOAT", "NC_DOUBLE")
 
@@ -181,16 +227,30 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   if (format == "netcdf4") {
     cat("Defining variables for netcdf4 ...\n")
     var.def.nc(nc, "namestr", "NC_STRING", c("station"))
+    var.def.nc(nc, "namestr_fill", "NC_STRING", c("station"))
     var.def.nc(nc, "profile", id_vector, c("station","time"))
+    var.def.nc(nc, "profile_fill", id_vector, c("station","time"))
+    var.def.nc(nc, "profile_pack", id_vector, c("station","time"))
+    att.put.nc(nc, "profile_pack", "scale_factor", "NC_FLOAT", 10)
     var.def.nc(nc, "profile_char", id_vector_char, c("station","time"))
+    var.def.nc(nc, "profile_string", id_vector_string, c("station","time"))
     var.def.nc(nc, "profile_blob", id_vector_blob, c("time"))
     var.def.nc(nc, "profile_scalar", id_vector, NA)
     var.def.nc(nc, "rawdata", id_blob, c("station","time"))
     var.def.nc(nc, "rawdata_scalar", id_blob, NA)
     var.def.nc(nc, "rawdata_vector", id_blob, c("station"))
     var.def.nc(nc, "snacks", "factor", c("station", "time"))
+    var.def.nc(nc, "snacks_empty", "factor", c("station", "time"))
     var.def.nc(nc, "person", "struct", c("station", "time"))
-    varcnt <- varcnt+10
+    var.def.nc(nc, "person_fill", "struct", c("station", "time"))
+    varcnt <- varcnt+16
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      var.def.nc(nc, "profile_vector", id_vector_vector, c("station","time"))
+      var.def.nc(nc, "profile_vector_fill", id_vector_vector, c("station","time"))
+      varcnt <- varcnt+2
+    }
+
     tally <- testfun(TRUE, TRUE, tally)
 
     numtypes <- c(numtypes, "NC_UBYTE", "NC_USHORT", "NC_UINT")
@@ -212,7 +272,7 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   }
 
   for (numtype in numtypes) {
-    for (namode in c(0,1,2,3,4)) {
+    for (namode in seq(0,5)) {
       cat("Defining variables of type", numtype, "for na.mode", namode, "...\n")
 
       varname <- paste(numtype,namode,sep="_")
@@ -354,6 +414,9 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   att.put.nc(nc, "temperature", "_FillValue", "NC_DOUBLE", -99999.9)
   inq_temperature$natts <- inq_temperature$natts + as.integer(1)
 
+  ## Set a _FillValue attribute for name_fill:
+  att.put.nc(nc, "name_fill", "_FillValue", "NC_CHAR", "X")
+
   ## Define the packing used by packvar
   id_double <- type.inq.nc(nc, "NC_DOUBLE")$id
   att.put.nc(nc, "packvar", "scale_factor", id_double, 10)
@@ -390,6 +453,17 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   myint0        <- 12345
   mychar0       <- "?"
 
+  mynamefill <- myname
+  for (ii in seq_along(myname)) {
+    mynamefill[ii] <- paste(rep("X", nstring), collapse="")
+    substr(mynamefill[ii], 1, nstring) <- myname[ii]
+  }
+
+  mynamestr <- myname
+  mynamestr[5] <- "NA"
+  mynamestr_fill <- myname
+  mynamestr_fill[5] <- NA
+
   mysmall       <- as.double(c(1,2,3,4,5))
   mybig         <- mysmall*1e100
   myminus       <- -mysmall
@@ -412,27 +486,57 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
     dim(profiles) <- c(nstation, ntime)
     for (ii in seq_len(nstation)) {
       for (jj in seq_len(ntime)) {
-	profiles[[ii,jj]] <- seq_len(ii+jj)*(ii+jj)
+        # Profiles have increasing length, starting from 0:
+	profiles[[ii,jj]] <- 10*seq_len(ii+jj-2)*(ii+jj)
       }
     }
 
     profiles_char <- lapply(profiles,function(x) {paste(as.character(x),collapse=",")})
     dim(profiles_char) <- dim(profiles)
 
+    profiles_string <- lapply(profiles, as.character)
+    dim(profiles_string) <- dim(profiles)
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      profiles_vector <- lapply(profiles, function(x) {lapply(x, seq_len)})
+      dim(profiles_vector) <- dim(profiles)
+      profiles_vector_fill <- profiles_vector
+      profiles_vector_fillval <- list(list(-999999999))
+      profiles_vector[[3]][[2]][5] <- -999999999
+      profiles_vector_fill[[3]][[2]][5] <- NA
+    }
+
+    profiles_fill <- profiles
+    profiles_fillval <- list(-999999999)
+    profiles[[3]][2] <- -999999999
+    profiles_fill[[3]][2] <- NA
+
     rawdata <- as.raw(seq_len(nstation*ntime*128) %% 256)
     dim(rawdata) <- c(128,nstation,ntime)
 
-    profiles_blob <- list(rawdata[,1:2,1], rawdata[,3:5,1])
+    profiles_blob <- list(rawdata[,3:5,1], rawdata[,0,1])
     dim(profiles_blob) <- ntime
 
     snack_foods <- names(inq_factor$value)
-    snacks <- factor(rep(snack_foods,times=5),
+    snacks <- factor(rep(snack_foods, length.out=nstation*ntime),
                          levels=snack_foods)
     dim(snacks) <- c(nstation, ntime)
+    snacks_fill <- snacks
+    snacks_fill[snacks_fill == "NA"] <- NA
+    snacks_empty <- snacks
+    snacks_empty[] <- NA
 
     person <- list(siteid=array(rep(seq(1,nstation),ntime), c(nstation,ntime)),
                    height=array(1+0.1*seq(1,nstation*ntime), c(nstation,ntime)),
                    colour=array(rep(c(0,0,0,64,128,192),nstation), c(3,nstation,ntime)))
+    person_fillval <- list(siteid=person$siteid[1,1],
+                        height=person$height[1,1],
+                        colour=person$colour[,1,1])
+    person_fill <- person
+    person_fill$siteid[person_fill$siteid == person_fillval$siteid] <- NA
+    person_fill$height[person_fill$height == person_fillval$height] <- NA
+    # Note that array in compound uses same fill value for all elements:
+    person_fill$colour[person_fill$colour == person_fillval$colour[1]] <- NA
   }
 
   ## Define some user-defined test attributes:
@@ -453,6 +557,18 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
     att.put.nc(nc, "NC_GLOBAL", "vector_scal_att", "vector", profiles[1])
     att.put.nc(nc, "NC_GLOBAL", "vector_vect_att", "vector", profiles[1:3])
     tally <- testfun(TRUE, TRUE, tally)
+
+    # Fill values for strings and user-defined variables:
+    att.put.nc(nc, "namestr_fill", "_FillValue", "NC_STRING", "_MISSING")
+    att.put.nc(nc, "snacks", "_FillValue", "factor", factor("NA"))
+    att.put.nc(nc, "person_fill", "_FillValue", "struct", person_fillval)
+    att.put.nc(nc, "profile_fill", "_FillValue", id_vector,
+               profiles_fillval)
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      att.put.nc(nc, "profile_vector_fill", "_FillValue", id_vector_vector,
+                 profiles_vector_fillval)
+    }
   }
 
   ##  Put the data
@@ -462,6 +578,7 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
              cache_preemption=0.5)
   var.put.nc(nc, "packvar", mypackvar, pack=TRUE)
   var.put.nc(nc, "name", myname, c(1,1), c(nstring,nstation))
+  var.put.nc(nc, "name_fill", myname, na.mode=5)
   var.put.nc(nc, "qcflag", charToRaw(myqcflag))
   var.put.nc(nc, "int0", myint0)
   var.put.nc(nc, "char0", mychar0)
@@ -469,17 +586,34 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
 
   if (format == "netcdf4") {
     cat("Writing extra netcdf4 variables ...")
-    var.put.nc(nc, "namestr", myname)
+    var.put.nc(nc, "namestr", mynamestr_fill)
+    var.put.nc(nc, "namestr_fill", mynamestr_fill, na.mode=5)
     var.put.nc(nc, "profile", profiles)
+    var.put.nc(nc, "profile_fill", profiles_fill, na.mode=5)
+    var.put.nc(nc, "profile_pack", profiles, pack=TRUE)
     var.put.nc(nc, "profile_char", profiles_char)
+    var.put.nc(nc, "profile_string", profiles_string)
     var.put.nc(nc, "profile_blob", profiles_blob)
     var.put.nc(nc, "profile_scalar", profiles[1])
     var.put.nc(nc, "rawdata", rawdata)
     var.put.nc(nc, "rawdata_scalar", rawdata[,1,1])
     var.put.nc(nc, "rawdata_vector", rawdata[,,1])
-    var.put.nc(nc, "snacks", snacks)
-    var.put.nc(nc, "person", person)
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      var.put.nc(nc, "profile_vector", profiles_vector)
+      var.put.nc(nc, "profile_vector_fill", profiles_vector_fill, na.mode=5)
+    }
+
+    y <- try(var.put.nc(nc, "snacks", snacks_fill, na.mode=3), silent=TRUE)
+    tally <- testfun(inherits(y, "try-error"), TRUE, tally)
+    var.put.nc(nc, "snacks", snacks_fill, na.mode=5)
     tally <- testfun(TRUE, TRUE, tally)
+
+    var.put.nc(nc, "person", person, na.mode=3)
+    tally <- testfun(TRUE, TRUE, tally)
+    var.put.nc(nc, "person_fill", person_fill, na.mode=5)
+    tally <- testfun(TRUE, TRUE, tally)
+
     if (has_bit64) {
       var.put.nc(nc, "stationid", mybig64)
       tally <- testfun(TRUE, TRUE, tally)
@@ -489,7 +623,7 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   }
 
   for (numtype in numtypes) {
-    for (namode in c(0,1,2,3,4)) {
+    for (namode in seq(0,5)) {
       cat("Writing to variable type", numtype, "with na.mode", namode, "...\n")
 
       # Should not succeed except for NC_DOUBLE:
@@ -685,7 +819,7 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   tally <- testfun(is.double(y),TRUE,tally)
 
   for (numtype in numtypes) {
-    for (namode in c(0,1,2,3,4)) {
+    for (namode in seq(0,5)) {
       x <- mysmall
       dim(x) <- length(x)
 
@@ -799,7 +933,7 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
         tally <- testfun(is.double(y),TRUE,tally)
       }
 
-      if (!nabit64fail) {
+      if (has_bit64 && !nabit64fail) {
         varname <- paste(numtype,"pack64",namode,sep="_")
         cat("Read", varname, "...")
         y <- var.get.nc(nc, varname, unpack=TRUE, na.mode=namode)
@@ -912,6 +1046,16 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
   y <- var.get.nc(nc, "name")
   tally <- testfun(x,y,tally)
 
+  cat("Read 2D char array with fill value ... ")
+  x <- mynamefill
+  dim(x) <- length(x)
+  y <- var.get.nc(nc, "name_fill", na.mode=3)
+  tally <- testfun(x,y,tally)
+  x <- myname
+  dim(x) <- length(x)
+  y <- var.get.nc(nc, "name_fill", na.mode=5)
+  tally <- testfun(x,y,tally)
+
   cat("Read 2D char slice ... ")
   x <- substring(myname[2:3],1,4)
   dim(x) <- length(x)
@@ -951,13 +1095,19 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
 
   if (format == "netcdf4") {
     cat("Read 1D string array ...")
-    x <- myname
+    x <- mynamestr
     dim(x) <- length(x)
     y <- var.get.nc(nc, "namestr")
     tally <- testfun(x,y,tally)
 
+    cat("Read 1D string array with fill values ...")
+    x <- mynamestr_fill
+    dim(x) <- length(x)
+    y <- var.get.nc(nc, "namestr_fill", na.mode=5)
+    tally <- testfun(x,y,tally)
+
     cat("Read 1D string slice ...")
-    x <- myname[2:3]
+    x <- mynamestr[2:3]
     dim(x) <- length(x)
     y <- var.get.nc(nc, "namestr", c(2), c(2))
     tally <- testfun(x,y,tally)
@@ -1018,21 +1168,49 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
     tally <- testfun(x,y,tally)
     tally <- testfun(isTRUE(all(sapply(y,is.integer))), TRUE, tally)
 
+    cat("Read vlen with fill ...")
+    x <- profiles_fill
+    y <- var.get.nc(nc, "profile_fill", na.mode=5)
+    tally <- testfun(x,y,tally)
+
     cat("Read vlen scalar ...")
     x <- profiles[1]
     y <- var.get.nc(nc, "profile_scalar")
     tally <- testfun(x,y,tally)
 
-    cat("Read vlen as character ...")
+    cat("Reading packed vlen ...")
+    x <- profiles
+    y <- var.get.nc(nc, "profile_pack", unpack=TRUE)
+    tally <- testfun(x,y,tally)
+    tally <- testfun(isTRUE(all(sapply(y,is.double))), TRUE, tally)
+
+    cat("Read character vlen ...")
     x <- profiles_char
     y <- var.get.nc(nc, "profile_char")
     tally <- testfun(x,y,tally)
 
-    cat("Read vlen as raw ...")
+    cat("Read character vlen as raw ...")
     x <- lapply(profiles_char,charToRaw)
     dim(x) <- dim(profiles_char)
     y <- var.get.nc(nc, "profile_char", rawchar=TRUE)
     tally <- testfun(x,y,tally)
+
+    cat("Read string vlen ...")
+    x <- profiles_string
+    y <- var.get.nc(nc, "profile_string")
+    tally <- testfun(x,y,tally)
+
+    if (package_version(verstr) >= package_version("4.9.0")) {
+      cat("Read nested vlen ...")
+      x <- profiles_vector
+      y <- var.get.nc(nc, "profile_vector", na.mode=3)
+      tally <- testfun(x,y,tally)
+
+      cat("Read nested vlen with fill ...")
+      x <- profiles_vector_fill
+      y <- var.get.nc(nc, "profile_vector_fill", na.mode=5)
+      tally <- testfun(x,y,tally)
+    }
 
     cat("Read opaque ...")
     x <- rawdata
@@ -1057,12 +1235,26 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
 
     cat("Read enum ...")
     x <- snacks
-    y <- var.get.nc(nc, "snacks")
+    y <- var.get.nc(nc, "snacks", na.mode=3)
+    tally <- testfun(x,y,tally)
+    x <- snacks_fill
+    y <- var.get.nc(nc, "snacks", na.mode=5)
+    tally <- testfun(x,y,tally)
+
+    cat("Read empty enum ...")
+    x <- snacks_empty
+    y <- NULL
+    assertWarning(y <- var.get.nc(nc, "snacks_empty"))
     tally <- testfun(x,y,tally)
 
     cat("Read compound ...")
     x <- person
-    y <- var.get.nc(nc, "person")
+    y <- var.get.nc(nc, "person", na.mode=3)
+    tally <- testfun(x,y,tally)
+
+    cat("Read compound with fill ...")
+    x <- person_fill
+    y <- var.get.nc(nc, "person_fill", na.mode=5)
     tally <- testfun(x,y,tally)
 
     cat("Read compound scalar attribute ...")
@@ -1133,12 +1325,14 @@ for (format in c("classic","offset64","data64","classic4","netcdf4")) {
 # Try diskless files:
 ncfile <- tempfile("RNetCDF-test-diskless", fileext=".nc")
 cat("Test diskless creation of ", ncfile, "...\n")
-nc <- try(create.nc(ncfile, diskless=TRUE))
-if (inherits(nc, "try-error") || file.exists(ncfile)) {
-  warning("NetCDF library may not support diskless files")
-} else {
+if (cfg$diskless) {
+  nc <- create.nc(ncfile, diskless=TRUE)
+  tally <- testfun(file.exists(ncfile), FALSE, tally)
   close.nc(nc)
-  tally <- testfun(TRUE, TRUE, tally)
+} else {
+  message("NetCDF library does not support diskless datasets")
+  nc <- try(create.nc(ncfile, diskless=TRUE), silent=TRUE)
+  tally <- testfun(inherits(nc, "try-error"), TRUE, tally)
 }
 unlink(ncfile)
 
@@ -1148,8 +1342,11 @@ unlink(ncfile)
 #-------------------------------------------------------------------------------#
 
 # Test if udunits support is available:
-if (inherits(try(utcal.nc("seconds since 1970-01-01", 0)), "try-error")) {
-  warning("UDUNITS calendar conversions not supported by this build of RNetCDF")
+if (!cfg$udunits) {
+
+  message("UDUNITS calendar conversions not supported by this build of RNetCDF")
+  x <- try(utcal.nc("seconds since 1970-01-01", 0), silent=TRUE)
+  tally <- testfun(inherits(x, "try-error"), TRUE, tally)
 
 } else {
 
@@ -1199,14 +1396,112 @@ if (inherits(try(utcal.nc("seconds since 1970-01-01", 0)), "try-error")) {
 
 }
 
+#-------------------------------------------------------------------------------#
+#  Parallel I/O demos
+#-------------------------------------------------------------------------------#
+
+mpiexec <- cfg$mpiexec
+parallel <- cfg$parallel
+
+if (mpiexec != "") {
+# mpiexec is specified, so assume that parallel I/O is meant to be enabled.
+
+  # List of MPI packages to test:
+  mpipkgs <- c("Rmpi", "pbdMPI")
+
+  # Try to find demo script directory:
+  demodirs <- c("demo",
+                file.path("..", "demo"),
+                file.path("..", "RNetCDF", "demo"))
+  demodir <- demodirs[dir.exists(demodirs)]
+  stopifnot(length(demodir) > 0)
+
+  # Check if any of the packages are loaded:
+  for (mpipkg in mpipkgs) {
+    if (isNamespaceLoaded(mpipkg)) {
+      warning("Package ", mpipkg, " is loaded, so mpiexec may fail")
+    }
+  }
+
+  for (mpipkg in c("Rmpi", "pbdMPI")) {
+    # We cannot use requireNamespace to check for installed MPI packages,
+    # because they may initialise the MPI library via .onLoad,
+    # which causes failure when we try to mpiexec another R script.
+    if (length(find.package(mpipkg, quiet=TRUE) > 0)) {
+      cat("Testing parallel I/O with package", mpipkg, "...\n")
+      demoscripts <- list.files(
+             demodir,
+             pattern=paste0(mpipkg, ".*\\.R"),
+             full.names=TRUE)
+      stopifnot(length(demoscripts) >= 1)
+      for (demoscript in demoscripts) {
+	ncfile <- tempfile("RNetCDF-MPI-test", fileext=".nc")
+	cat("Running script", demoscript, "with MPI ...\n")
+	x <- system2(mpiexec,
+	  args=c('-n', '2', 'Rscript', '--vanilla', demoscript, ncfile))
+	unlink(ncfile)
+	tally <- testfun(x, 0, tally)
+      }
+    } else {
+      message("Package ", mpipkg, " not available for parallel I/O tests\n")
+    }
+  }
+
+} else if (parallel) {
+# Parallel I/O may be enabled, but we cannot test without mpiexec being specified.
+
+  cat("Skipping parallel I/O tests as mpiexec is not defined\n")
+
+} else {
+# Assume that parallel I/O is meant to be disabled,
+# because parallel is FALSE and mpiexec is not specified.
+
+  ncfile <- tempfile("RNetCDF-MPI-test", fileext=".nc")
+
+  cat("Testing that create.nc fails with mpi_comm ... ")
+  x <- try(create.nc(ncfile, format="netcdf4", mpi_comm=1), silent=TRUE)
+  unlink(ncfile)
+  if (inherits(x, "try-error") &&
+      conditionMessage(attr(x, "condition")) == "MPI not supported") {
+    tally <- testfun(TRUE, TRUE, tally)
+  } else {
+    tally <- testfun(FALSE, TRUE, tally)
+  }
+
+  cat("Testing that open.nc fails with mpi_comm ... ")
+  x <- try(open.nc(ncfile, mpi_comm=1), silent=TRUE)
+  if (inherits(x, "try-error") &&
+      conditionMessage(attr(x, "condition")) == "MPI not supported") {
+    tally <- testfun(TRUE, TRUE, tally)
+  } else {
+    tally <- testfun(FALSE, TRUE, tally)
+  }
+
+  cat("Testing that var.par.nc fails ... ")
+  ncid <- create.nc(ncfile, format="netcdf4")
+  x <- try(var.par.nc(ncid, "dummy", "NC_COLLECTIVE"), silent=TRUE)
+  close.nc(ncid)
+  unlink(ncfile)
+  if (inherits(x, "try-error") &&
+      conditionMessage(attr(x, "condition")) == "MPI not supported") {
+    tally <- testfun(TRUE, TRUE, tally)
+  } else {
+    tally <- testfun(FALSE, TRUE, tally)
+  }
+
+}
+
+#-------------------------------------------------------------------------------#
 # Check that package can be unloaded:
-cat("Unload RNetCDF ...")
+#-------------------------------------------------------------------------------#
+
+cat("Unload RNetCDF ...\n")
 detach("package:RNetCDF",unload=TRUE)
 
 #-------------------------------------------------------------------------------#
 #  Overall summary
 #-------------------------------------------------------------------------------#
-cat("Summary:", tally["pass"], "pass /", tally["fail"], "fail. ")
+cat("Summary:", tally["pass"], "pass /", tally["fail"], "fail.\n")
 
 if (tally["fail"]==0) {
   cat("Package seems to work properly.\n")

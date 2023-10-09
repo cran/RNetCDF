@@ -2,7 +2,7 @@
  *
  *  Name:       variable.c
  *
- *  Version:    2.6-2
+ *  Version:    2.7-1
  *
  *  Purpose:    NetCDF variable functions for RNetCDF
  *
@@ -47,7 +47,7 @@
 #include "convert.h"
 #include "RNetCDF.h"
 
-#ifdef HAVE_NETCDF_PAR_H
+#ifdef HAVE_NETCDF_MPI
 #include <netcdf_par.h>
 #endif
 
@@ -231,12 +231,13 @@ R_nc_def_var (SEXP nc, SEXP varname, SEXP type, SEXP dims,
      fill, min and max, which are either NULL or allocated by R_alloc.
      The function returns the in-memory size (bytes) of a missing value.
    Argument mode specifies the attributes used for missing values:
-     0 - _FillValue, or missing_value
-     1 - _FillValue only
-     2 - missing_value only
-     3 - none
-     4 - fill value and valid range determined as described at
+     0 - (numeric types) _FillValue, or missing_value
+     1 - (numeric types) _FillValue only
+     2 - (numeric types) missing_value only
+     3 - (all types) none
+     4 - (numeric types) fill value and valid range determined as described at
          http://www.unidata.ucar.edu/software/netcdf/docs/attribute_conventions.html
+     5 - (all types) mode 4 for numeric types; _FillValue for other types
    Example: R_nc_miss_att (ncid, varid, mode, &fill, &min, &max);
   */
 static size_t
@@ -252,15 +253,26 @@ R_nc_miss_att (int ncid, int varid, int mode,
 
   /* Get details about type and size of netcdf variable */
   R_nc_check (nc_inq_vartype (ncid, varid, &xtype));
-  if (xtype == NC_CHAR ||
-      xtype == NC_STRING ||
-      xtype > NC_MAX_ATOMIC_TYPE) {
-    /* NetCDF attribute conventions describe the handling of missing values
-       in atomic numeric types. Let users handle other types as needed.
-     */
-    return 0;
-  }
   R_nc_check (nc_inq_type (ncid, xtype, NULL, &size));
+
+  if (mode == 5) {
+    /* Mode 5 is equivalent to mode 4 for numeric types
+       and mode 1 for non-numeric types */ 
+    if (xtype == NC_CHAR ||
+        xtype == NC_STRING ||
+        xtype > NC_MAX_ATOMIC_TYPE) {
+      mode = 1;
+    } else {
+      mode = 4;
+    }
+  } else {
+    /* For other modes, let users handle missing values in non-numeric types */
+    if (xtype == NC_CHAR ||
+        xtype == NC_STRING ||
+        xtype > NC_MAX_ATOMIC_TYPE) {
+      return 0;
+    }
+  }
 
   if (mode == 0 || mode == 1) {
     if (nc_inq_att (ncid, varid, "_FillValue", &atype, &cnt) == NC_NOERR &&
@@ -481,6 +493,29 @@ R_nc_miss_att (int ncid, int varid, int mode,
 }
 
 
+/* Free memory allocated by netcdf for fill values in R_nc_miss_att */
+static void
+R_nc_fill_free (int ncid, int xtype, void *fillp)
+{
+  if (fillp) {
+#ifdef HAVE_NC_RECLAIM_DATA
+    R_nc_check (nc_reclaim_data (ncid, xtype, fillp, 1));
+#else
+    int class;
+    if (xtype == NC_STRING) {
+      R_nc_check (nc_free_string (1, fillp));
+    } else if (xtype > NC_MAX_ATOMIC_TYPE) {
+      R_nc_check (nc_inq_user_type (ncid, xtype, NULL, NULL,
+                                    NULL, NULL, &class));
+      if (class == NC_VLEN) {
+        R_nc_check (nc_free_vlens (1, fillp));
+      }
+    }
+#endif
+  }
+}
+
+
 /* Find packing attributes for a given netcdf variable.
    On entry, pointers for results are passed from caller.
    On exit, either values are set or pointers are NULLed.
@@ -603,6 +638,9 @@ R_nc_get_var (SEXP nc, SEXP var, SEXP start, SEXP count,
   }
   R_nc_c2r (&io);
 
+  /* Free memory allocated by netcdf for fill values */
+  R_nc_fill_free (ncid, xtype, fillp);
+
   UNPROTECT(1);
   return result;
 }
@@ -661,11 +699,12 @@ R_nc_inq_var (SEXP nc, SEXP var)
     result = PROTECT(allocVector (VECSXP, 6));
   }
 
-  SET_VECTOR_ELT (result, 0, ScalarInteger (varid));
-  SET_VECTOR_ELT (result, 1, mkString (varname));
-  SET_VECTOR_ELT (result, 2, mkString (vartype));
-  SET_VECTOR_ELT (result, 3, ScalarInteger (ndims));
-  SET_VECTOR_ELT (result, 5, ScalarInteger (natts));
+  SET_VECTOR_ELT (result, 0, PROTECT(ScalarInteger (varid)));
+  SET_VECTOR_ELT (result, 1, PROTECT(mkString (varname)));
+  SET_VECTOR_ELT (result, 2, PROTECT(mkString (vartype)));
+  SET_VECTOR_ELT (result, 3, PROTECT(ScalarInteger (ndims)));
+  SET_VECTOR_ELT (result, 5, PROTECT(ScalarInteger (natts)));
+  UNPROTECT(5);
 
   if (ndims > 0) {
     rdimids = PROTECT(allocVector (INTSXP, ndims));
@@ -677,7 +716,8 @@ R_nc_inq_var (SEXP nc, SEXP var)
     R_nc_rev_int (dimids, ndims);
   } else {
     /* Return single NA for scalar dimensions */
-    SET_VECTOR_ELT (result, 4, ScalarInteger (NA_INTEGER));
+    SET_VECTOR_ELT (result, 4, PROTECT(ScalarInteger (NA_INTEGER)));
+    UNPROTECT(1);
   }
 
   if (withnc4) {
@@ -699,9 +739,10 @@ R_nc_inq_var (SEXP nc, SEXP var)
 #ifdef HAVE_NC_GET_VAR_CHUNK_CACHE
       R_nc_check (nc_get_var_chunk_cache (ncid, varid, &cache_bytes,
 					  &cache_slots, &cache_preemption));
-      SET_VECTOR_ELT (result, 7, ScalarReal (cache_bytes));
-      SET_VECTOR_ELT (result, 8, ScalarReal (cache_slots));
-      SET_VECTOR_ELT (result, 9, ScalarReal (cache_preemption));
+      SET_VECTOR_ELT (result, 7, PROTECT(ScalarReal (cache_bytes)));
+      SET_VECTOR_ELT (result, 8, PROTECT(ScalarReal (cache_slots)));
+      SET_VECTOR_ELT (result, 9, PROTECT(ScalarReal (cache_preemption)));
+      UNPROTECT(3);
 #else
       SET_VECTOR_ELT (result, 7, R_NilValue);
       SET_VECTOR_ELT (result, 8, R_NilValue);
@@ -710,38 +751,42 @@ R_nc_inq_var (SEXP nc, SEXP var)
     } else {
       /* Chunks not defined */
       SET_VECTOR_ELT (result, 6, R_NilValue);
-      SET_VECTOR_ELT (result, 7, ScalarReal (NA_REAL));
-      SET_VECTOR_ELT (result, 8, ScalarReal (NA_REAL));
-      SET_VECTOR_ELT (result, 9, ScalarReal (NA_REAL));
+      SET_VECTOR_ELT (result, 7, PROTECT(ScalarReal (NA_REAL)));
+      SET_VECTOR_ELT (result, 8, PROTECT(ScalarReal (NA_REAL)));
+      SET_VECTOR_ELT (result, 9, PROTECT(ScalarReal (NA_REAL)));
+      UNPROTECT(3);
     }
 
     /* deflate and shuffle */
     R_nc_check (nc_inq_var_deflate (ncid, varid, &shuffle,
                                     &deflate, &deflate_level));
     if (deflate) {
-      SET_VECTOR_ELT (result, 10, ScalarInteger (deflate_level));
+      SET_VECTOR_ELT (result, 10, PROTECT(ScalarInteger (deflate_level)));
     } else {
-      SET_VECTOR_ELT (result, 10, ScalarInteger (NA_INTEGER));
+      SET_VECTOR_ELT (result, 10, PROTECT(ScalarInteger (NA_INTEGER)));
     }
-    SET_VECTOR_ELT (result, 11, ScalarLogical (shuffle));
+    SET_VECTOR_ELT (result, 11, PROTECT(ScalarLogical (shuffle)));
+    UNPROTECT(2);
 
     /* endian */
 #ifdef HAVE_NC_INQ_VAR_ENDIAN
     R_nc_check (nc_inq_var_endian (ncid, varid, &endian));
     if (endian == NC_ENDIAN_LITTLE) {
-      SET_VECTOR_ELT (result, 12, ScalarLogical(0));
+      SET_VECTOR_ELT (result, 12, PROTECT(ScalarLogical(0)));
     } else if (endian == NC_ENDIAN_BIG) {
-      SET_VECTOR_ELT (result, 12, ScalarLogical(1));
+      SET_VECTOR_ELT (result, 12, PROTECT(ScalarLogical(1)));
     } else {
-      SET_VECTOR_ELT (result, 12, ScalarLogical(NA_LOGICAL));
+      SET_VECTOR_ELT (result, 12, PROTECT(ScalarLogical(NA_LOGICAL)));
     }
+    UNPROTECT(1);
 #else
     SET_VECTOR_ELT (result, 12, R_NilValue);
 #endif
 
     /* fletcher32 */
     R_nc_check (nc_inq_var_fletcher32 (ncid, varid, &fletcher));
-    SET_VECTOR_ELT (result, 13, ScalarLogical (fletcher == NC_FLETCHER32));
+    SET_VECTOR_ELT (result, 13, PROTECT(ScalarLogical (fletcher == NC_FLETCHER32)));
+    UNPROTECT(1);
 
     /* szip */
 #ifdef HAVE_NC_INQ_VAR_SZIP
@@ -749,17 +794,19 @@ R_nc_inq_var (SEXP nc, SEXP var)
     if (status == NC_NOERR) {
       if (szip_options == 0) {
         /* netcdf>=4.7.4 sets results to 0 if szip is not used */
-        SET_VECTOR_ELT (result, 14, ScalarInteger (NA_INTEGER));
-        SET_VECTOR_ELT (result, 15, ScalarInteger (NA_INTEGER));
+        SET_VECTOR_ELT (result, 14, PROTECT(ScalarInteger (NA_INTEGER)));
+        SET_VECTOR_ELT (result, 15, PROTECT(ScalarInteger (NA_INTEGER)));
       } else {
-        SET_VECTOR_ELT (result, 14, ScalarInteger (szip_options));
-        SET_VECTOR_ELT (result, 15, ScalarInteger (szip_bits));
+        SET_VECTOR_ELT (result, 14, PROTECT(ScalarInteger (szip_options)));
+        SET_VECTOR_ELT (result, 15, PROTECT(ScalarInteger (szip_bits)));
       }
+      UNPROTECT(2);
 #  if defined NC_EFILTER
     } else if (status == NC_EFILTER) {
       /* netcdf<4.7.4 returns NC_EFILTER if szip is not used */
-      SET_VECTOR_ELT (result, 14, ScalarInteger (NA_INTEGER));
-      SET_VECTOR_ELT (result, 15, ScalarInteger (NA_INTEGER));
+      SET_VECTOR_ELT (result, 14, PROTECT(ScalarInteger (NA_INTEGER)));
+      SET_VECTOR_ELT (result, 15, PROTECT(ScalarInteger (NA_INTEGER)));
+      UNPROTECT(2);
 #  endif
     } else {
       error (nc_strerror (status));
@@ -810,8 +857,9 @@ R_nc_inq_var (SEXP nc, SEXP var)
 
     } else {
       /* netcdf>=4.7.4 returns NC_EINVAL for non-chunked variables */
-      SET_VECTOR_ELT (result, 16, allocVector(REALSXP, 0));
-      SET_VECTOR_ELT (result, 17, allocVector(VECSXP, 0));
+      SET_VECTOR_ELT (result, 16, PROTECT(allocVector(REALSXP, 0)));
+      SET_VECTOR_ELT (result, 17, PROTECT(allocVector(VECSXP, 0)));
+      UNPROTECT(2);
     }
 #else
     SET_VECTOR_ELT (result, 16, R_NilValue);
@@ -831,9 +879,7 @@ R_nc_inq_var (SEXP nc, SEXP var)
 SEXP
 R_nc_par_var (SEXP nc, SEXP var, SEXP access)
 {
-#if defined NC_COLLECTIVE && defined NC_INDEPENDENT && \
-    defined HAVE_NC_VAR_PAR_ACCESS
-
+#ifdef HAVE_NETCDF_MPI
   int ncid, varid, iaccess;
 
   /*-- Convert arguments to netcdf ids ----------------------------------------*/
@@ -859,7 +905,7 @@ R_nc_par_var (SEXP nc, SEXP var, SEXP access)
   return R_NilValue;
 
 #else
-  error("Changing parallel access mode not supported by NetCDF library");
+  error("MPI not supported");
 #endif
 }
 
@@ -956,6 +1002,9 @@ R_nc_put_var (SEXP nc, SEXP var, SEXP start, SEXP count, SEXP data,
                     fillsize, fillp, scalep, addp);
     R_nc_check (nc_put_vara (ncid, varid, cstart, ccount, buf));
   }
+
+  /* Free memory allocated by netcdf for fill values */
+  R_nc_fill_free (ncid, xtype, fillp);
 
   return R_NilValue;
 }

@@ -2,7 +2,7 @@
  *
  *  Name:       dataset.c
  *
- *  Version:    2.6-2
+ *  Version:    2.7-1
  *
  *  Purpose:    NetCDF dataset functions for RNetCDF
  *
@@ -46,7 +46,8 @@
 #include "common.h"
 #include "RNetCDF.h"
 
-#ifdef HAVE_NETCDF_PAR_H
+#if defined HAVE_NETCDF_MPI
+#include <mpi.h>
 #include <netcdf_par.h>
 #endif
 
@@ -122,9 +123,12 @@ R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
              SEXP format, SEXP diskless, SEXP persist,
              SEXP mpi_comm, SEXP mpi_info)
 {
-  int cmode, fillmode, old_fillmode, ncid, *fileid, icommf, iinfof;
+  int cmode, fillmode, old_fillmode, ncid, *fileid, icommf;
   SEXP Rptr, result;
   const char *filep;
+#ifdef HAVE_NETCDF_MPI
+  int iinfof;
+#endif
 
   /*-- Determine the cmode ----------------------------------------------------*/
   if (asLogical(clobber) == TRUE) {
@@ -177,12 +181,14 @@ R_nc_create (SEXP filename, SEXP clobber, SEXP share, SEXP prefill,
   filep = R_nc_strarg (filename);
   if (strlen (filep) > 0) {
     icommf = asInteger(mpi_comm);
-    iinfof = asInteger(mpi_info);
-    if (icommf == NA_INTEGER || iinfof == NA_INTEGER) {
+    if (icommf == NA_INTEGER) {
       R_nc_check (nc_create (R_ExpandFileName (filep), cmode, &ncid));
     } else {
-#if defined HAVE_NETCDF_PAR_H && \
-    defined HAVE_NC_CREATE_PAR_FORTRAN
+#ifdef HAVE_NETCDF_MPI
+      iinfof = asInteger(mpi_info);
+      if (iinfof == NA_INTEGER) {
+        iinfof = MPI_Info_c2f(MPI_INFO_NULL);
+      }
       R_nc_check (nc_create_par_fortran (R_ExpandFileName (filep),
                     cmode, icommf, iinfof, &ncid));
 #else
@@ -234,14 +240,14 @@ R_nc_inq_file (SEXP nc)
 
   /*-- Returning the list -----------------------------------------------------*/
   result = PROTECT(allocVector (VECSXP, 6)); 
-  SET_VECTOR_ELT (result, 0, ScalarInteger (ndims));
-  SET_VECTOR_ELT (result, 1, ScalarInteger (nvars));
-  SET_VECTOR_ELT (result, 2, ScalarInteger (ngatts));
-  SET_VECTOR_ELT (result, 3, ScalarInteger (unlimdimid));
-  SET_VECTOR_ELT (result, 4, mkString (R_nc_format2str (format)));
-  SET_VECTOR_ELT (result, 5, mkString (libvers));
+  SET_VECTOR_ELT (result, 0, PROTECT(ScalarInteger (ndims)));
+  SET_VECTOR_ELT (result, 1, PROTECT(ScalarInteger (nvars)));
+  SET_VECTOR_ELT (result, 2, PROTECT(ScalarInteger (ngatts)));
+  SET_VECTOR_ELT (result, 3, PROTECT(ScalarInteger (unlimdimid)));
+  SET_VECTOR_ELT (result, 4, PROTECT(mkString (R_nc_format2str (format))));
+  SET_VECTOR_ELT (result, 5, PROTECT(mkString (libvers)));
 
-  UNPROTECT(1);
+  UNPROTECT(7);
   return result;
 }
 
@@ -254,9 +260,12 @@ SEXP
 R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill,
            SEXP diskless, SEXP persist, SEXP mpi_comm, SEXP mpi_info)
 {
-  int ncid, omode, fillmode, old_fillmode, *fileid, icommf, iinfof;
+  int ncid, omode, fillmode, old_fillmode, *fileid, icommf;
   const char *filep;
   SEXP Rptr, result;
+#ifdef HAVE_NETCDF_MPI
+  int iinfof;
+#endif
 
   /*-- Determine the omode ----------------------------------------------------*/
   if (asLogical(write) == TRUE) {
@@ -293,12 +302,14 @@ R_nc_open (SEXP filename, SEXP write, SEXP share, SEXP prefill,
   filep = R_nc_strarg (filename);
   if (strlen (filep) > 0) {
     icommf = asInteger(mpi_comm);
-    iinfof = asInteger(mpi_info);
-    if (icommf == NA_INTEGER || iinfof == NA_INTEGER) {
+    if (icommf == NA_INTEGER) {
       R_nc_check (nc_open (R_ExpandFileName (filep), omode, &ncid));
     } else {
-#if defined HAVE_NETCDF_PAR_H && \
-    defined HAVE_NC_OPEN_PAR_FORTRAN
+#ifdef HAVE_NETCDF_MPI
+      iinfof = asInteger(mpi_info);
+      if (iinfof == NA_INTEGER) {
+        iinfof = MPI_Info_c2f(MPI_INFO_NULL);
+      }
       R_nc_check (nc_open_par_fortran (R_ExpandFileName (filep),
                     omode, icommf, iinfof, &ncid)); 
 #else
