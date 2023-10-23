@@ -2,7 +2,7 @@
 #  Initialize                                                    		#
 #-------------------------------------------------------------------------------#
 
-AC_INIT([RNetCDF],[2.7-1])
+AC_INIT([RNetCDF],[2.8-1])
 
 : ${R_HOME=`R RHOME`}
 AS_IF([test -z "${R_HOME}"],
@@ -233,14 +233,15 @@ AS_IF([test "x$platform" = xWindows], [
 
 
 #-------------------------------------------------------------------------------#
-#  Find sizes of selected data types                                            #
+#  Check type sizes and language features supported by compiler                 #
 #-------------------------------------------------------------------------------#
 
-AC_MSG_NOTICE([Find sizes of selected data types:])
+AC_MSG_NOTICE([Check compiler type sizes and language features])
 
 AC_CHECK_SIZEOF([int])
 AC_CHECK_SIZEOF([long long])
 AC_CHECK_SIZEOF([size_t])
+AC_C_RESTRICT()
 
 
 #-------------------------------------------------------------------------------#
