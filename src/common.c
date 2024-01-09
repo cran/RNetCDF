@@ -2,7 +2,7 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.8-1
+ *  Version:    2.9-1
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
@@ -44,7 +44,7 @@ int
 R_nc_check(int status)
 {
   if (status != NC_NOERR) {
-    error (nc_strerror (status));
+    error ("%s", nc_strerror (status));
   }
   return status;
 }

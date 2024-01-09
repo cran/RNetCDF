@@ -2,7 +2,7 @@
  *
  *  Name:       variable.c
  *
- *  Version:    2.8-1
+ *  Version:    2.9-1
  *
  *  Purpose:    NetCDF variable functions for RNetCDF
  *
@@ -809,7 +809,7 @@ R_nc_inq_var (SEXP nc, SEXP var)
       UNPROTECT(2);
 #  endif
     } else {
-      error (nc_strerror (status));
+      error ("%s", nc_strerror (status));
     }
 #else
     SET_VECTOR_ELT (result, 14, R_NilValue);

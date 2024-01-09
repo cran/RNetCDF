@@ -1,6 +1,6 @@
 Package: RNetCDF
-Version: 2.8-1
-Date: 2023-10-21
+Version: 2.9-1
+Date: 2023-12-30
 Title: Interface to 'NetCDF' Datasets
 Authors@R: c(person("Pavel", "Michna", role = "aut",
                     email = "rnetcdf-devel@bluewin.ch"),
@@ -20,9 +20,9 @@ URL: https://github.com/mjwoods/RNetCDF
         https://www.unidata.ucar.edu/software/udunits/
 BugReports: https://github.com/mjwoods/RNetCDF/issues
 NeedsCompilation: yes
-Packaged: 2023-10-21 08:38:04 UTC; mwoods
+Packaged: 2023-12-30 02:02:20 UTC; mwoods
 Author: Pavel Michna [aut],
   Milton Woods [aut, cre]
 Maintainer: Milton Woods <miltonjwoods@gmail.com>
 Repository: CRAN
-Date/Publication: 2023-10-23 08:00:02 UTC
+Date/Publication: 2024-01-09 10:30:08 UTC
