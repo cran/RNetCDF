@@ -7,7 +7,7 @@
 #  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
 #              Milton Woods (miltonjwoods@gmail.com)
 #
-#  Copyright (C) 2004-2024 Pavel Michna and Milton Woods.
+#  Copyright (C) 2004-2025 Pavel Michna and Milton Woods.
 #
 #===============================================================================
 #
@@ -323,12 +323,8 @@ print_att <- function(grp, attinfo, indent, varinfo=NULL) {
     atttypestr <- attinfo$type
     attval <- att.get.nc(grp, varid, attinfo$id,
                          fitnum=requireNamespace("bit64", quietly=TRUE))
-    if (inherits(attval, "integer64")) {
-      attvalchar <- bit64::as.character.integer64(attval)
-    } else {
-      attvalchar <- as.character(attval)
-    }
-    attvalstr <- paste(attvalchar, collapse=", ", sep="")
+    attvalchar <- as.character(attval)
+    attvalstr <- toString(attvalchar)
   }
   tab <- "\t"
   cat(indent, tab, tab, atttypestr, " ",

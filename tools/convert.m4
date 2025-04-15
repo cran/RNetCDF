@@ -5,14 +5,14 @@ dnl Insert warning into generated C code:
  *
  *  Name:       convert.c
  *
- *  Version:    2.9-2
+ *  Version:    2.10-2
  *
  *  Purpose:    Type conversions for RNetCDF
  *
  *  Author:     Pavel Michna (rnetcdf-devel@bluewin.ch)
  *              Milton Woods (miltonjwoods@gmail.com)
  *
- *  Copyright (C) 2004-2024 Pavel Michna and Milton Woods.
+ *  Copyright (C) 2004-2025 Pavel Michna and Milton Woods.
  *
  *=============================================================================*
  *
@@ -1358,7 +1358,7 @@ R_nc_enum_factor (R_nc_buf *io)
   any_undef = 0;
   for (ifac=0, inval=io->cbuf; ifac<nfac; ifac++, inval+=size) {
     symbol = PROTECT(R_nc_char_symbol (inval, size, work));
-    index = findVarInFrame3 (env, symbol, TRUE);
+    index = findVar (symbol, env);
     UNPROTECT(1);
     if (index == R_UnboundValue) {
       /* Convert undefined enum values to NA,
