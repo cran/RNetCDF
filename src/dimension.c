@@ -2,7 +2,7 @@
  *
  *  Name:       dimension.c
  *
- *  Version:    2.10-2
+ *  Version:    2.11-1
  *
  *  Purpose:    NetCDF dimension functions for RNetCDF
  *
@@ -30,6 +30,7 @@
  *=============================================================================*
  */
 
+#include "config.h"
 
 #include <stdio.h>
 #include <string.h>

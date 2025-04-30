@@ -2,7 +2,7 @@
  *
  *  Name:       common.c
  *
- *  Version:    2.10-2
+ *  Version:    2.11-1
  *
  *  Purpose:    Common definitions for RNetCDF functions
  *
@@ -29,6 +29,8 @@
  *
  *=============================================================================*
  */
+
+#include "config.h"
 
 #include <string.h>
 

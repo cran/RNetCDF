@@ -2,7 +2,7 @@
  *
  *  Name:       udunits.c
  *
- *  Version:    2.10-2
+ *  Version:    2.11-1
  *
  *  Purpose:    udunits2 functions for RNetCDF.
  *
@@ -34,6 +34,8 @@
 /*=============================================================================*\
  *  Includes
 \*=============================================================================*/
+
+#include "config.h"
 
 #include <stdio.h>
 #include <string.h>

@@ -4,7 +4,7 @@
  *
  *  Name:       convert.c
  *
- *  Version:    2.10-2
+ *  Version:    2.11-1
  *
  *  Purpose:    Type conversions for RNetCDF
  *
@@ -37,6 +37,8 @@
  *  Includes
 \*=============================================================================*/
 
+#include "config.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -46,6 +48,7 @@
 
 #include <R.h>
 #include <Rinternals.h>
+#include <Rversion.h>
 
 #include <netcdf.h>
 
@@ -6882,7 +6885,10 @@ R_nc_char_symbol (char *in, size_t size, char *work)
 static void
 R_nc_enum_factor (R_nc_buf *io)
 {
-  SEXP levels, env, cmd, symbol, index;
+  SEXP levels, env, symbol, index;
+#if !defined(R_VERSION) || R_VERSION < R_Version(4, 1, 0)
+  SEXP cmd;
+#endif
   size_t size, nmem, ifac, nfac;
   char *memname, *memval, *work, *inval;
   int ncid, imem, imemmax, *out, any_undef;
@@ -6901,8 +6907,12 @@ R_nc_enum_factor (R_nc_buf *io)
   /* Create a hashed environment for value-index pairs.
      Members inherit PROTECTion from the env.
    */
+#if defined(R_VERSION) && R_VERSION >= R_Version(4, 1, 0)
+  env = PROTECT(R_NewEnv(R_BaseEnv, TRUE, 0));
+#else
   cmd = PROTECT(lang1 (install ("new.env")));
   env = PROTECT(eval (cmd, R_BaseEnv));
+#endif
 
   /* Read values and names of netcdf enum members.
      Store names as R factor levels.
@@ -6942,7 +6952,11 @@ R_nc_enum_factor (R_nc_buf *io)
   any_undef = 0;
   for (ifac=0, inval=io->cbuf; ifac<nfac; ifac++, inval+=size) {
     symbol = PROTECT(R_nc_char_symbol (inval, size, work));
+#if defined(R_VERSION) && R_VERSION >= R_Version(4, 5, 0)
+    index = R_getVarEx(symbol, env, FALSE, R_UnboundValue);
+#else
     index = findVar (symbol, env);
+#endif
     UNPROTECT(1);
     if (index == R_UnboundValue) {
       /* Convert undefined enum values to NA,
@@ -6959,7 +6973,11 @@ R_nc_enum_factor (R_nc_buf *io)
   }
 
   /* Allow garbage collection of env and levels */
+#if defined(R_VERSION) && R_VERSION >= R_Version(4, 1, 0)
+  UNPROTECT(2);
+#else
   UNPROTECT(3);
+#endif
 }
 
 
